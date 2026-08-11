@@ -1,0 +1,4 @@
+# Copy to .public-release-deny-patterns and add one case-insensitive substring
+# per line for company names, internal domains, tenant IDs, app IDs, email
+# domains, account numbers, or other deployment identifiers that must never
+# enter a public snapshot. The real file is intentionally ignored by Git.

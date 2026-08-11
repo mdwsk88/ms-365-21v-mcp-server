@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.env
+.tokens/
+npm-debug.log*
+.DS_Store
+.codex/deploy-aws-ec2-ssm.env
+meeting-materials/
+deploy/overlays/private/
+.public-release-deny-patterns

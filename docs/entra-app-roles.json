@@ -1,0 +1,92 @@
+{
+  "appRoles": [
+    {
+      "allowedMemberTypes": ["User"],
+      "description": "Use Microsoft 365 mail tools through the MCP Gateway.",
+      "displayName": "MCP Mail",
+      "id": "7c39446f-dd95-4458-bb97-a8c7d6078149",
+      "isEnabled": true,
+      "value": "mcp.mail"
+    },
+    {
+      "allowedMemberTypes": ["User"],
+      "description": "Use calendar tools through the MCP Gateway.",
+      "displayName": "MCP Calendar",
+      "id": "c3b0abe8-91d9-48ea-855c-810fcdf5cc7a",
+      "isEnabled": true,
+      "value": "mcp.calendar"
+    },
+    {
+      "allowedMemberTypes": ["User"],
+      "description": "Use OneDrive tools through the MCP Gateway.",
+      "displayName": "MCP OneDrive",
+      "id": "dcec6e92-5528-4067-b93e-df2054b4d4c1",
+      "isEnabled": true,
+      "value": "mcp.drive"
+    },
+    {
+      "allowedMemberTypes": ["User"],
+      "description": "Use SharePoint tools through the MCP Gateway.",
+      "displayName": "MCP SharePoint",
+      "id": "d93abcc1-1a20-4929-9374-cfab764b76ba",
+      "isEnabled": true,
+      "value": "mcp.sharepoint"
+    },
+    {
+      "allowedMemberTypes": ["User"],
+      "description": "Use Microsoft Teams tools through the MCP Gateway.",
+      "displayName": "MCP Teams",
+      "id": "e865b017-8ad9-498b-b5a6-68b5e97187f9",
+      "isEnabled": true,
+      "value": "mcp.teams"
+    },
+    {
+      "allowedMemberTypes": ["User"],
+      "description": "Use personal contacts tools through the MCP Gateway.",
+      "displayName": "MCP Contacts",
+      "id": "94b5aea5-0e75-4e85-b10f-2899c1662138",
+      "isEnabled": true,
+      "value": "mcp.contacts"
+    },
+    {
+      "allowedMemberTypes": ["User"],
+      "description": "Use profile and organization user tools through the MCP Gateway.",
+      "displayName": "MCP Users",
+      "id": "71d0b69d-0764-4b95-b57c-3154598f9266",
+      "isEnabled": true,
+      "value": "mcp.users"
+    },
+    {
+      "allowedMemberTypes": ["User"],
+      "description": "Discover Microsoft Entra and Microsoft 365 groups through the MCP Gateway.",
+      "displayName": "MCP Groups",
+      "id": "a8e70b21-00c0-45cc-97f3-58db162c2ca1",
+      "isEnabled": true,
+      "value": "mcp.groups"
+    },
+    {
+      "allowedMemberTypes": ["User"],
+      "description": "Use Microsoft Search together with the corresponding data-domain role.",
+      "displayName": "MCP Microsoft Search",
+      "id": "7b6f1196-c7f8-4727-84ae-71af146b2889",
+      "isEnabled": true,
+      "value": "mcp.search"
+    },
+    {
+      "allowedMemberTypes": ["User"],
+      "description": "Use smart aggregation tools together with the corresponding mail, calendar, or Teams role.",
+      "displayName": "MCP Smart Insights",
+      "id": "f3ca9f1b-451d-432f-8a42-371e0b79833c",
+      "isEnabled": true,
+      "value": "mcp.smart"
+    },
+    {
+      "allowedMemberTypes": ["User"],
+      "description": "Use every module loaded by the MCP Gateway, including administrative debug tools.",
+      "displayName": "MCP Gateway Administrator",
+      "id": "af291793-0ca8-45ac-a1b7-673cf242cb68",
+      "isEnabled": true,
+      "value": "mcp.admin"
+    }
+  ]
+}

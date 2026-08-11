@@ -1,0 +1,56 @@
+{
+  "name": "ms-365-21v-mcp-server-pro",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Policy-aware OAuth 2.1 MCP gateway for Microsoft 365 operated by 21Vianet",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mdwsk88/ms-365-21v-mcp-server-pro.git"
+  },
+  "homepage": "https://github.com/mdwsk88/ms-365-21v-mcp-server-pro#readme",
+  "bugs": {
+    "url": "https://github.com/mdwsk88/ms-365-21v-mcp-server-pro/issues"
+  },
+  "keywords": [
+    "mcp",
+    "microsoft-365",
+    "microsoft-graph",
+    "21vianet",
+    "oauth-2.1"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "type": "module",
+  "bin": {
+    "ms365-21v-mcp": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc && chmod +x dist/index.js",
+    "dev": "tsx src/index.ts",
+    "dev:http": "MCP_TRANSPORT=http tsx src/index.ts",
+    "start": "node dist/index.js",
+    "start:http": "MCP_TRANSPORT=http node dist/index.js",
+    "docs:tools": "npm run build && node scripts/generate-tool-catalog.mjs",
+    "check:public": "node scripts/public-release-check.mjs",
+    "check:release": "node scripts/public-release-check.mjs --release",
+    "export:public": "node scripts/export-public-snapshot.mjs",
+    "benchmark:tools": "npm run build && node scripts/benchmark-tool-exposure.mjs",
+    "package:agentrun": "bash scripts/package-agentrun.sh",
+    "test": "npm run build && node --test test/*.test.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@azure/msal-node": "5.3.1",
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "dotenv": "17.4.2",
+    "jose": "6.2.3",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "26.0.1",
+    "tsx": "4.22.4",
+    "typescript": "6.0.3"
+  }
+}
