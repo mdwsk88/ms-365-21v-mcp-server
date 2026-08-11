@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: ms-365-21v-mcp-server-pro:local
+    image: ms-365-21v-mcp-server:local
     init: true
     restart: unless-stopped
     env_file:

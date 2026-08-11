@@ -38,6 +38,6 @@ Keep private values in a separate private repository and secret manager. The pub
 
 ## Positioning
 
-The project should be positioned as a 21V-first, policy-aware Microsoft 365 MCP gateway with a direct Chinese fast path and optional long-tail discovery. It should not claim affiliation with Microsoft or 21Vianet and should not market itself as a fork or official "Pro" edition of another project.
+The project should be positioned as a 21V-first, policy-aware Microsoft 365 MCP gateway with a direct Chinese fast path and optional long-tail discovery. It should not claim affiliation with Microsoft or 21Vianet, or present itself as an official edition of another project.
 
 Tool count alone is not the goal. Public benchmarks should compare direct, discovery, and hybrid modes by tool-schema bytes, model/tool round trips, Graph requests, latency, result size, and task success for Chinese enterprise prompts.

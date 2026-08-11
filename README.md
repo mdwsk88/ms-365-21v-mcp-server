@@ -1,4 +1,4 @@
-# MS 365-21V MCP Server Pro
+# MS 365-21V MCP Server
 
 面向 Microsoft 365 operated by 21Vianet（世纪互联）的远程 MCP 服务。它通过标准 Streamable HTTP 和 OAuth 2.1，让支持 MCP 的 AI 客户端以当前登录用户的身份访问 Microsoft Graph 中国区。
 
@@ -47,7 +47,35 @@ flowchart LR
 
 ## 快速开始
 
-下面使用推荐的**双应用 + Web 登录**模式。单应用和 public/native client 模式也受支持，见 [Entra 登录模式说明](docs/ENTRA_CONFIDENTIAL_WEB_LOGIN.md)。
+### 先理解“一个应用”和“两个应用”
+
+这里的“应用”指 **Entra ID 后台的一条 App Registration（应用注册）**，不是要部署两个 MCP 服务，也不是让最终用户安装两个客户端。
+
+登录链路里实际有两项不同职责：
+
+| 职责 | 通俗理解 | 在 Entra 中保存什么 |
+|---|---|---|
+| MCP API | MCP 服务的门禁和权限边界 | `access_as_user` scope、Graph delegated permissions、App Roles、OBO 凭据 |
+| Web 登录客户端 | 打开微软登录页并接收登录结果 | 固定 HTTPS 回调地址、登录 client secret、调用 MCP API 的权限 |
+
+它们的配合过程很简单：
+
+```text
+用户登录
+  -> Web 登录客户端接收登录结果
+  -> 获得调用 MCP API 的 access_as_user token
+  -> MCP API 确认用户和角色
+  -> MCP 代表该用户访问 Microsoft Graph 中国区
+```
+
+这两项职责可以放在一条应用注册里，也可以拆成两条：
+
+| 方案 | Entra 中创建几条应用注册 | 适合谁 | 配置特点 |
+|---|---:|---|---|
+| 单应用 | 1 条 | 第一次试用、个人测试、小规模部署 | 步骤最少；同一个应用同时负责登录和保护 MCP API |
+| 双应用 | 2 条 | 多用户共享、企业生产 | 登录凭据和数据权限分开，轮换、审计和故障定位更清楚 |
+
+不确定时，可以先用单应用跑通；准备提供给多人使用时再拆成双应用。拆分不会改变 MCP 地址。下面先创建两种方案都需要的 MCP API，再根据你的选择完成登录配置。
 
 ### 准备条件
 
@@ -69,7 +97,7 @@ Entra 回调: https://mcp.example.cn/oauth/microsoft/callback
 
 打开 [Azure 中国门户](https://portal.azure.cn)，进入 **Microsoft Entra ID > 应用注册**。
 
-#### 应用一：MCP API
+#### 第一步：创建 MCP API 应用
 
 1. 新建单租户应用，例如 `MS365-21V-MCP-API`，记录 **Tenant ID** 和 **Application (client) ID**。
 2. 打开 **证书和密码**，创建一个 client secret。它只保存在 MCP 服务器，用于 OBO。
@@ -89,7 +117,25 @@ Entra 回调: https://mcp.example.cn/oauth/microsoft/callback
 5. 打开 **API 权限 > 添加权限 > Microsoft Graph > 委托的权限**，先添加 `User.Read`。
 6. 点击 **代表组织授予管理员同意**。
 
-#### 应用二：Web 登录客户端
+#### 第二步：选择登录应用的配置方式
+
+**方案 A：单应用，最快跑通**
+
+继续在刚创建的 `MS365-21V-MCP-API` 中操作：
+
+1. 打开 **身份验证 > 添加平台 > Web**。
+2. 添加精确回调地址：
+
+   ```text
+   https://mcp.example.cn/oauth/microsoft/callback
+   ```
+
+3. 不要启用 implicit grant，也不要启用 public client flow。
+4. 不需要再创建第二个应用。服务端会复用这个应用的 client ID 和 client secret 完成登录。
+
+**方案 B：双应用，企业部署推荐**
+
+再创建一条只负责登录的应用注册：
 
 1. 新建单租户应用，例如 `MS365-21V-MCP-Web`。
 2. 打开 **身份验证 > 添加平台 > Web**，填写精确回调地址：
@@ -103,7 +149,7 @@ Entra 回调: https://mcp.example.cn/oauth/microsoft/callback
 5. 打开 **API 权限 > 添加权限 > 我的 API**，选择前面的 MCP API 应用，再选择 delegated permission `access_as_user`。
 6. 点击 **代表组织授予管理员同意**。
 
-如果“我的 API”里看不到 MCP API，请先给两个 App Registration 添加同一个 Owner，再刷新页面。
+如果“我的 API”里看不到 MCP API，请先给两条 App Registration 添加同一个 Owner，再刷新页面。
 
 #### 按功能增加 Graph 权限
 
@@ -125,12 +171,12 @@ Entra 回调: https://mcp.example.cn/oauth/microsoft/callback
 ### 2. 获取代码并填写配置
 
 ```bash
-git clone https://github.com/mdwsk88/ms-365-21v-mcp-server-pro.git
-cd ms-365-21v-mcp-server-pro
+git clone https://github.com/mdwsk88/ms-365-21v-mcp-server.git
+cd ms-365-21v-mcp-server
 cp .env.example .env
 ```
 
-编辑 `.env`，双应用 Web 模式最少需要填写：
+编辑 `.env`。下面是双应用模式的配置：
 
 ```dotenv
 # 21V tenant 与 MCP API 应用
@@ -169,6 +215,14 @@ MCP_TOOL_EXPOSURE_MODE=hybrid
 MCP_SEND_MODE=confirm
 MCP_AUDIT_LOG_ENABLED=true
 MCP_ADMIN_TOKEN=<LONG_RANDOM_VALUE>
+```
+
+如果选择单应用，不需要填写第二组 ID 和 secret：
+
+```dotenv
+# 留空后，登录流程会自动复用 MS_CLIENT_ID 和 MS_CLIENT_SECRET
+MS_OAUTH_CLIENT_ID=
+MS_OAUTH_CLIENT_SECRET=
 ```
 
 `MCP_PUBLIC_BASE_URL` 会自动生成 MCP resource metadata、OAuth issuer 和 Microsoft callback。只有平台在公网 URL 前增加了路径前缀时，才需要填写带完整前缀的地址。

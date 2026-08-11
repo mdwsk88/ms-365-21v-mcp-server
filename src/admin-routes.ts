@@ -44,7 +44,7 @@ export function mountAdminRoutes(app: any, config: AppConfig): void {
   mountGet('/admin/health', (_req, res) => {
     res.json({
       ok: true,
-      name: 'ms-365-21v-mcp-server-pro',
+      name: 'ms-365-21v-mcp-server',
       transport: config.transport,
       toolCount: registry.getAll().length,
       categories: registry.getAllCategories(),

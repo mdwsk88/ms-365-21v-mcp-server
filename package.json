@@ -1,16 +1,16 @@
 {
-  "name": "ms-365-21v-mcp-server-pro",
+  "name": "ms-365-21v-mcp-server",
   "version": "0.1.0",
   "private": true,
   "description": "Policy-aware OAuth 2.1 MCP gateway for Microsoft 365 operated by 21Vianet",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/mdwsk88/ms-365-21v-mcp-server-pro.git"
+    "url": "git+https://github.com/mdwsk88/ms-365-21v-mcp-server.git"
   },
-  "homepage": "https://github.com/mdwsk88/ms-365-21v-mcp-server-pro#readme",
+  "homepage": "https://github.com/mdwsk88/ms-365-21v-mcp-server#readme",
   "bugs": {
-    "url": "https://github.com/mdwsk88/ms-365-21v-mcp-server-pro/issues"
+    "url": "https://github.com/mdwsk88/ms-365-21v-mcp-server/issues"
   },
   "keywords": [
     "mcp",
