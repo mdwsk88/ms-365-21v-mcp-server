@@ -15,6 +15,26 @@
 - **可审计的写操作**：邮件、Teams 消息和高风险写操作支持确认策略、一次性批准和脱敏审计。
 - **开箱即用的智能聚合**：提供邮件摘要和日程冲突分析，减少 Agent 自己组合多次 Graph 请求的成本。
 
+## 已验证客户端
+
+本项目不绑定某一个 AI 客户端。以下客户端已经完成远程 Streamable HTTP 连接、OAuth 登录触发、工具发现和实际工具调用验证：
+
+| 客户端 | 接入方式 | 验证状态 |
+|---|---|---|
+| WorkBuddy | 远程 MCP URL + OAuth 2.1 | 已验证 |
+| Qoder Work | 远程 MCP URL + OAuth 2.1 | 已验证 |
+| Codex | HTTP MCP 配置 + OAuth 2.1 | 已验证 |
+| Dify | MCP 工具集成 + OAuth 2.1 | 已验证 |
+
+其他客户端只要同时支持以下能力，通常也可以接入：
+
+1. MCP Streamable HTTP transport。
+2. OAuth 2.1 protected resource metadata 和 authorization server discovery。
+3. 通过浏览器完成授权并接收 OAuth callback。
+4. 在后续 MCP 请求中携带 Bearer token。
+
+不同客户端的配置界面可能把连接类型显示为 `streamable-http`、`http` 或“远程 MCP”，但填写的都是同一个 `/mcp` endpoint。客户端能够打开登录页不代表租户一定会放行登录；最终结果仍受 Entra Conditional Access、MFA、设备合规和用户分配策略控制。
+
 ## 能力范围
 
 | 模块 | 示例能力 |
@@ -274,7 +294,7 @@ npm run dev:http
 }
 ```
 
-有些客户端把 `type` 写成 `http`，图形界面通常只需要填写 endpoint URL。首次连接时，客户端应读取 OAuth metadata 并打开 21V Entra 登录页。
+有些客户端把 `type` 写成 `http`，图形界面通常只需要填写 endpoint URL。WorkBuddy、Qoder Work、Codex 和 Dify 都使用同一个 MCP 地址，不需要为不同客户端分别注册 Entra callback。首次连接时，客户端应读取 OAuth metadata 并打开 21V Entra 登录页。
 
 ### 5. 验证
 
