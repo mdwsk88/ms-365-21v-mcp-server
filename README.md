@@ -1,388 +1,105 @@
 # MS 365-21V MCP Server
 
-面向 Microsoft 365 operated by 21Vianet（世纪互联）的远程 MCP 服务。它通过标准 Streamable HTTP 和 OAuth 2.1，让支持 MCP 的 AI 客户端以当前登录用户的身份访问 Microsoft Graph 中国区。
+**让支持 MCP 的 AI 客户端，以你的身份使用世纪互联 Microsoft 365。**
 
-项目目前实现 150 个工具，覆盖邮件、日历、OneDrive、SharePoint、Teams、联系人、组织用户、Microsoft Search 和智能聚合。所有业务调用都使用 Delegated permissions，不使用后台应用身份冒充用户。
+查询邮件、安排日程、检索 OneDrive 和 SharePoint，连接 Microsoft Graph 中国区；保留用户权限、操作确认和审计边界。
 
-> 本项目不是 Microsoft 或 21Vianet 官方产品。生产使用前，请由租户管理员和安全团队审核 Entra 权限、Conditional Access、用户分配和数据合规要求。
+[![CI](https://github.com/mdwsk88/ms-365-21v-mcp-server/actions/workflows/ci.yml/badge.svg)](https://github.com/mdwsk88/ms-365-21v-mcp-server/actions/workflows/ci.yml)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
 
-## 为什么使用它
+[快速上手](docs/QUICKSTART.md) · [完整部署](DEPLOYMENT.md) · [使用场景](USER_GUIDE.md) · [工具目录](docs/TOOL_CATALOG.md) · [English](README.en.md)
 
-- **为 21V 环境设计**：使用中国区 Entra、Microsoft Graph endpoint 和 delegated permission。
-- **通用 OAuth 2.1 接入**：内置 OAuth bridge，客户端只需连接一个 HTTPS MCP 地址，不必原生适配 21V 的 OAuth 差异。
-- **按用户授权**：可以用 Entra App Roles 控制每个用户可见和可调用的工具模块，工具列表与实际执行使用同一套校验。
-- **中文请求快路径**：常用工具可直接暴露；长尾工具可按中文意图动态搜索，兼顾调用速度和上下文大小。
-- **可审计的写操作**：邮件、Teams 消息和高风险写操作支持确认策略、一次性批准和脱敏审计。
-- **开箱即用的智能聚合**：提供邮件摘要和日程冲突分析，减少 Agent 自己组合多次 Graph 请求的成本。
+> 非 Microsoft 或 21Vianet 官方产品。需要世纪互联租户和管理员授权，不适用于直接连接全球版 Microsoft 365 或个人 Outlook 账号。本文中的业务示例需要对应模块与权限，初始配置只开放个人资料查询。
 
-## 已验证客户端
+## 先看它能帮你做什么
 
-本项目不绑定某一个 AI 客户端。以下客户端已经完成远程 Streamable HTTP 连接、OAuth 登录触发、工具发现和实际工具调用验证：
-
-| 客户端 | 接入方式 | 验证状态 |
+| 你对 AI 说 | 能力 | 启用条件 |
 |---|---|---|
-| WorkBuddy | 远程 MCP URL + OAuth 2.1 | 已验证 |
-| Qoder Work | 远程 MCP URL + OAuth 2.1 | 已验证 |
-| Codex | HTTP MCP 配置 + OAuth 2.1 | 已验证 |
-| Dify | MCP 工具集成 + OAuth 2.1 | 已验证 |
+| “获取我的个人资料，确认当前登录账号。” | 验证 OAuth → Graph 链路 | 快速上手的默认场景 |
+| “列出最近 5 封邮件，只显示主题和发件人。” | 邮件读取 | Mail 模块、`Mail.Read`、`mcp.mail` |
+| “检查明天的会议是否有时间冲突。” | 日程冲突分析 | Calendar + Smart 模块、对应权限与角色 |
+| “在我的 OneDrive 中查找项目计划。” | 文件检索 | OneDrive 模块、`Files.Read`、`mcp.drive` |
+| “整理回复内容，发送前让我确认。” | 邮件写入与确认 | 额外写权限；保持 `MCP_SEND_MODE=confirm` |
 
-其他客户端只要同时支持以下能力，通常也可以接入：
+工具会返回数据供 AI 客户端使用，不会因为接入 MCP 而授予用户原本没有的数据权限。完整角色、scope 和工具映射见[工具目录](docs/TOOL_CATALOG.md)。
 
-1. MCP Streamable HTTP transport。
-2. OAuth 2.1 protected resource metadata 和 authorization server discovery。
-3. 通过浏览器完成授权并接收 OAuth callback。
-4. 在后续 MCP 请求中携带 Bearer token。
+## 为什么专门做一个 21V 版本
 
-不同客户端的配置界面可能把连接类型显示为 `streamable-http`、`http` 或“远程 MCP”，但填写的都是同一个 `/mcp` endpoint。客户端能够打开登录页不代表租户一定会放行登录；最终结果仍受 Entra Conditional Access、MFA、设备合规和用户分配策略控制。
+- **中国区身份与数据端点**：围绕 21V Entra 和 Microsoft Graph 中国区设计，而不是只替换全球版服务的域名。
+- **客户端接入更统一**：Streamable HTTP + OAuth bridge，通过一个 MCP 地址连接；服务端使用当前用户的 delegated permissions / OBO。
+- **可控制的工具与写操作**：App Roles、按模块与 scope 过滤、常用工具直达/长尾工具发现，以及确认与脱敏审计。
 
-## 能力范围
-
-| 模块 | 示例能力 |
-|---|---|
-| 邮件 | 查询、搜索、附件、草稿、发送、回复、转发、移动和删除 |
-| 日历 | 日程查询、忙闲分析、重复日程、创建、更新和取消 |
-| OneDrive | 浏览、搜索、上传、下载、移动、分享、权限和版本 |
-| SharePoint | 站点、列表、列表项、文档库、分享和版本 |
-| Teams | 团队、频道、聊天和消息，实际范围取决于租户权限 |
-| 联系人与用户 | 联系人管理、当前用户和组织用户基础资料 |
-| Microsoft Search | 跨邮件、日历、文件、SharePoint 和 Teams 搜索 |
-| 智能聚合 | 邮件摘要、日程冲突分析 |
-
-完整工具、App Role 和 Graph scope 映射见 [工具目录](docs/TOOL_CATALOG.md)。21V 对部分全球云 API 不提供支持，本项目不会把这些 API 标记为可用。
-
-## 工作方式
-
-```mermaid
-flowchart LR
-  User["用户"] --> Client["OAuth 2.1 MCP 客户端"]
-  Client --> Bridge["MCP OAuth bridge"]
-  Bridge --> Entra["21V Entra ID 登录"]
-  Client --> MCP["Streamable HTTP /mcp"]
-  MCP --> Policy["App Roles、确认、审计"]
-  Policy --> OBO["On-Behalf-Of"]
-  OBO --> Graph["Microsoft Graph 中国区"]
-```
-
-客户端拿到的是本服务签发的短期 bridge token。服务端再把已登录用户的 Microsoft token 通过 On-Behalf-Of 换成 Graph token，因此 Graph 最终看到的仍是当前用户，用户本身没有权限的数据不会因为 MCP 而变得可访问。
+覆盖邮件、日历、OneDrive、SharePoint、Teams、联系人、组织用户、Microsoft Search 和智能聚合。**代码中实现了工具，不等于你的租户已授权，也不等于每个全球云 API 都在 21V 可用。**
 
 ## 快速开始
 
-### 先理解“一个应用”和“两个应用”
+### 只使用别人已经部署好的服务？
 
-这里的“应用”指 **Entra ID 后台的一条 App Registration（应用注册）**，不是要部署两个 MCP 服务，也不是让最终用户安装两个客户端。
+不需要克隆仓库，也不需要自己创建 Entra 应用。向管理员获取 HTTPS MCP 地址及使用权限，在支持 Streamable HTTP 和 OAuth 的客户端添加它，然后登录。参见[用户使用说明](USER_GUIDE.md)。
 
-登录链路里实际有两项不同职责：
+### 第一次部署？从“读取我的资料”开始
 
-| 职责 | 通俗理解 | 在 Entra 中保存什么 |
-|---|---|---|
-| MCP API | MCP 服务的门禁和权限边界 | `access_as_user` scope、Graph delegated permissions、App Roles、OBO 凭据 |
-| Web 登录客户端 | 打开微软登录页并接收登录结果 | 固定 HTTPS 回调地址、登录 client secret、调用 MCP API 的权限 |
-
-它们的配合过程很简单：
-
-```text
-用户登录
-  -> Web 登录客户端接收登录结果
-  -> 获得调用 MCP API 的 access_as_user token
-  -> MCP API 确认用户和角色
-  -> MCP 代表该用户访问 Microsoft Graph 中国区
-```
-
-这两项职责可以放在一条应用注册里，也可以拆成两条：
-
-| 方案 | Entra 中创建几条应用注册 | 适合谁 | 配置特点 |
-|---|---:|---|---|
-| 单应用 | 1 条 | 第一次试用、个人测试、小规模部署 | 步骤最少；同一个应用同时负责登录和保护 MCP API |
-| 双应用 | 2 条 | 多用户共享、企业生产 | 登录凭据和数据权限分开，轮换、审计和故障定位更清楚 |
-
-不确定时，可以先用单应用跑通；准备提供给多人使用时再拆成双应用。拆分不会改变 MCP 地址。下面先创建两种方案都需要的 MCP API，再根据你的选择完成登录配置。
-
-### 准备条件
-
-- 一个 Microsoft 365 operated by 21Vianet 租户。
-- 可以创建 App Registration、添加 delegated permissions 并执行 admin consent 的管理员。
-- Docker，或者 Node.js 22+ 与 npm。
-- 远程部署时需要一个能够转发到本服务 3000 端口的 HTTPS 地址。
-
-示例使用：
-
-```text
-MCP 地址: https://mcp.example.cn/mcp
-Entra 回调: https://mcp.example.cn/oauth/microsoft/callback
-```
-
-本机测试可把域名替换为 `http://localhost:3000`，并在 Entra 中配置完全相同的本机回调。
-
-### 1. 配置 Entra ID
-
-打开 [Azure 中国门户](https://portal.azure.cn)，进入 **Microsoft Entra ID > 应用注册**。
-
-#### 第一步：创建 MCP API 应用
-
-1. 新建单租户应用，例如 `MS365-21V-MCP-API`，记录 **Tenant ID** 和 **Application (client) ID**。
-2. 打开 **证书和密码**，创建一个 client secret。它只保存在 MCP 服务器，用于 OBO。
-3. 打开 **公开 API**，将 Application ID URI 设置为：
-
-   ```text
-   api://<API_CLIENT_ID>
-   ```
-
-4. 添加 delegated scope：
-
-   ```text
-   access_as_user
-   ```
-
-   建议选择 **仅管理员可同意**。
-5. 打开 **API 权限 > 添加权限 > Microsoft Graph > 委托的权限**，先添加 `User.Read`。
-6. 点击 **代表组织授予管理员同意**。
-
-#### 第二步：选择登录应用的配置方式
-
-**方案 A：单应用，最快跑通**
-
-继续在刚创建的 `MS365-21V-MCP-API` 中操作：
-
-1. 打开 **身份验证 > 添加平台 > Web**。
-2. 添加精确回调地址：
-
-   ```text
-   https://mcp.example.cn/oauth/microsoft/callback
-   ```
-
-3. 不要启用 implicit grant，也不要启用 public client flow。
-4. 不需要再创建第二个应用。服务端会复用这个应用的 client ID 和 client secret 完成登录。
-
-**方案 B：双应用，企业部署推荐**
-
-再创建一条只负责登录的应用注册：
-
-1. 新建单租户应用，例如 `MS365-21V-MCP-Web`。
-2. 打开 **身份验证 > 添加平台 > Web**，填写精确回调地址：
-
-   ```text
-   https://mcp.example.cn/oauth/microsoft/callback
-   ```
-
-3. 不要启用 implicit grant，也不要启用 public client flow。
-4. 打开 **证书和密码**，创建这个 Web 应用自己的 client secret。
-5. 打开 **API 权限 > 添加权限 > 我的 API**，选择前面的 MCP API 应用，再选择 delegated permission `access_as_user`。
-6. 点击 **代表组织授予管理员同意**。
-
-如果“我的 API”里看不到 MCP API，请先给两条 App Registration 添加同一个 Owner，再刷新页面。
-
-#### 按功能增加 Graph 权限
-
-只在 **MCP API 应用**上添加 Microsoft Graph delegated permissions。先从需要的模块开始，不必一次开放全部权限。
-
-| 功能 | 常用 delegated permissions |
-|---|---|
-| 当前用户 | `User.Read` |
-| 邮件读取/发送 | `Mail.Read`、`Mail.ReadWrite`、`Mail.Send` |
-| 日历 | `Calendars.Read`、`Calendars.ReadWrite` |
-| OneDrive | `Files.Read`、`Files.ReadWrite` |
-| SharePoint | `Sites.Read.All`、`Sites.ReadWrite.All`、`Files.Read.All`、`Files.ReadWrite.All` |
-| Teams 聊天 | `Chat.Read`、`Chat.ReadWrite`、`Chat.Create`、`ChatMessage.Send` |
-| 联系人 | `Contacts.Read`、`Contacts.ReadWrite` |
-| 组织用户基础资料 | `User.ReadBasic.All` |
-
-每次增加权限后都要重新执行 admin consent。组织范围较大的 Teams、Group、User 和站点权限应先经过安全审批；未获批的 scope 可以保留在 `MCP_DISABLED_GRAPH_SCOPES`，相关工具会同时从工具列表和执行入口隐藏。
-
-### 2. 获取代码并填写配置
+准备 Node.js 22+、Git，以及能配置 Entra 应用、同意权限并分配角色的管理员。先按[快速上手](docs/QUICKSTART.md)完成单应用配置，再运行：
 
 ```bash
 git clone https://github.com/mdwsk88/ms-365-21v-mcp-server.git
 cd ms-365-21v-mcp-server
-cp .env.example .env
+npm run setup
 ```
 
-编辑 `.env`。下面是双应用模式的配置：
-
-```dotenv
-# 21V tenant 与 MCP API 应用
-MS_TENANT_ID=<TENANT_ID>
-MS_CLIENT_ID=<API_CLIENT_ID>
-MS_CLIENT_SECRET=<API_CLIENT_SECRET>
-
-# Web 登录应用
-MS_OAUTH_CLIENT_ID=<WEB_CLIENT_ID>
-MS_OAUTH_CLIENT_SECRET=<WEB_CLIENT_SECRET>
-
-# 21V endpoints
-MS_AUTHORITY_HOST=https://login.partner.microsoftonline.cn
-MS_GRAPH_BASE_URL=https://microsoftgraph.chinacloudapi.cn/v1.0
-
-# 服务公开地址，不包含 /mcp
-MCP_PUBLIC_BASE_URL=https://mcp.example.cn
-MCP_HTTP_HOST=0.0.0.0
-MCP_HTTP_PORT=3000
-MCP_HTTP_PATH=/mcp
-
-# MCP API scope
-MCP_AUTHORIZATION_SCOPES=api://<API_CLIENT_ID>/access_as_user
-MCP_TOKEN_AUDIENCE=api://<API_CLIENT_ID>
-MCP_REQUIRED_TOKEN_SCOPES=access_as_user
-
-# OAuth bridge
-MCP_OAUTH_BRIDGE_ENABLED=true
-MCP_OAUTH_BRIDGE_MICROSOFT_CLIENT_TYPE=confidential_web
-
-# 第一次联调可暂时关闭；生产建议启用并分配 App Roles
-MCP_ROLE_BASED_FILTERING=false
-
-# 推荐的工具与写操作策略
-MCP_TOOL_EXPOSURE_MODE=hybrid
-MCP_SEND_MODE=confirm
-MCP_AUDIT_LOG_ENABLED=true
-MCP_ADMIN_TOKEN=<LONG_RANDOM_VALUE>
-```
-
-如果选择单应用，不需要填写第二组 ID 和 secret：
-
-```dotenv
-# 留空后，登录流程会自动复用 MS_CLIENT_ID 和 MS_CLIENT_SECRET
-MS_OAUTH_CLIENT_ID=
-MS_OAUTH_CLIENT_SECRET=
-```
-
-`MCP_PUBLIC_BASE_URL` 会自动生成 MCP resource metadata、OAuth issuer 和 Microsoft callback。只有平台在公网 URL 前增加了路径前缀时，才需要填写带完整前缀的地址。
-
-Microsoft 官方列出的中国云 Entra 根地址是 `https://login.chinacloudapi.cn`。部分 21V 租户实际使用 `https://login.partner.microsoftonline.cn`；请以租户现有应用和登录日志中的 authority 为准，并通过 `MS_AUTHORITY_HOST` 显式配置。
-
-不要提交 `.env`。`.gitignore`、Docker 构建和公开发布检查都会排除真实凭据，但 secret 仍应存放在部署平台的 Secret Manager 中。
-
-### 3A. 使用 Docker 启动
+向导只询问 Tenant ID、API Client ID 和服务地址。它生成最小 `.env`，不会覆盖已有文件，也不会要求你把 client secret 放进命令行。编辑 `.env` 中的 `MS_CLIENT_SECRET`，使用 secret 的 **Value**，不是 Secret ID，然后运行：
 
 ```bash
-docker compose up -d --build
-docker compose ps
-curl http://127.0.0.1:3000/healthz
-```
-
-Docker 使用非 root 用户运行，并把 token 状态和审计日志保存在项目的 `.tokens` 目录。修改 `.env` 后重新执行：
-
-```bash
-docker compose up -d --build
-```
-
-### 3B. 使用源码启动
-
-```bash
+npm run doctor
 npm ci
 npm run build
 npm run start:http
 ```
 
-开发模式：
+本机桌面客户端连接 `http://localhost:3000/mcp`。远程或云端客户端需要能够访问的 HTTPS 地址；云端客户端的 `localhost` 不是你的电脑。
+
+**成功标准：** 在客户端完成登录，调用 `auth_status`，再成功执行 `graph_get_me`。健康检查通过或能看到工具，都不等于 Graph 权限已经配置成功。
+
+初始配置保持 OAuth、App Roles、审计和操作确认开启，只加载个人资料模块。后续按需启用邮件、日历等功能，不用一次申请全部权限。[逐步启用只读邮件](docs/QUICKSTART.md#启用第一个业务场景只读邮件)
+
+已有部署请先运行 `npm run doctor`，不要重新生成或覆盖 `.env`。Docker、双应用、反向代理和生产检查见[完整部署说明](DEPLOYMENT.md)。
+
+## 配置错了，从哪里查？
 
 ```bash
-npm run dev:http
+npm run doctor
+npm run --silent doctor -- --json
 ```
 
-### 4. 配置 MCP 客户端
+离线检查会提示缺失或占位凭据、错误的云端点、地址覆盖、端口格式和单/双应用凭据不匹配等常见问题。它不打印配置值、不访问网络，也不修改 Entra。**检查通过不代表管理员同意、Conditional Access 或真实 OAuth/Graph 调用已经验证。**
 
-在支持 OAuth 2.1 和 Streamable HTTP 的客户端中添加：
+[常见问题与检查边界](docs/QUICKSTART.md#遇到问题时)
 
-```json
-{
-  "mcpServers": {
-    "ms365-21v": {
-      "type": "streamable-http",
-      "url": "https://mcp.example.cn/mcp"
-    }
-  }
-}
-```
+## 客户端兼容性
 
-有些客户端把 `type` 写成 `http`，图形界面通常只需要填写 endpoint URL。WorkBuddy、Qoder Work、Codex 和 Dify 都使用同一个 MCP 地址，不需要为不同客户端分别注册 Entra callback。首次连接时，客户端应读取 OAuth metadata 并打开 21V Entra 登录页。
+仓库此前记录 WorkBuddy、Qoder Work、Codex 和 Dify 已完成远程连接、OAuth、工具发现与调用验证；这不是本次维护对这些客户端最新版的重新认证。详细记录保留在[完整部署说明](DEPLOYMENT.md#已验证客户端)。
 
-### 5. 验证
+其他客户端需要支持 Streamable HTTP、OAuth 资源元数据/授权服务器发现、浏览器回调和 Bearer token。客户端能打开登录页面，也仍可能被租户 MFA、设备合规或用户分配策略拦截。
 
-1. 检查服务：
+## 安全边界
 
-   ```bash
-   curl https://mcp.example.cn/healthz
-   ```
+远程服务使用 HTTPS；生产凭据放入 Secret Manager；只授予实际需要的 Graph delegated permissions 和 App Roles。不要为解决登录问题关闭认证或直接开放全部模块。
 
-2. 在 MCP 客户端中确认能看到 `auth_status` 和业务工具。
-3. 先调用“查看我的认证状态”或“获取我的个人资料”。
-4. 再测试一个低风险读操作，例如“列出最近 5 封邮件”或“查看今天的日程”。
+使用中国区 Graph **不自动保证端到端数据不出境**：工具结果还会发送给你选择的 AI 客户端/模型服务。上线前需审核客户端数据流、日志留存、模型供应商及组织合规要求。详见[威胁模型](docs/THREAT_MODEL.md)和[安全策略](SECURITY.md)。
 
-如果能看到工具但不弹登录页，优先检查 `/mcp` 未携带 Bearer token 时是否返回 `401` 和正确的 `resource_metadata`。常见回调、路径前缀和设备策略问题见 [登录模式与排障](docs/ENTRA_CONFIDENTIAL_WEB_LOGIN.md)。
+## 文档与参与
 
-## 用户权限
+| 目标 | 入口 |
+|---|---|
+| 首次跑通、检查配置、逐步启用功能 | [快速上手](docs/QUICKSTART.md) |
+| Docker、双应用、角色、生产部署 | [完整部署](DEPLOYMENT.md) |
+| 实际使用方式与提示词 | [用户使用说明](USER_GUIDE.md) |
+| 工具及所需权限 | [工具目录](docs/TOOL_CATALOG.md) |
+| 回调、设备策略与登录问题 | [Entra 登录排障](docs/ENTRA_CONFIDENTIAL_WEB_LOGIN.md) |
+| 后续维护优先级与发布记录 | [维护路线](docs/MAINTENANCE.md) · [Changelog](CHANGELOG.md) |
 
-第一次联调可以使用 `MCP_ROLE_BASED_FILTERING=false`。正式共享给多人前，建议启用按用户授权：
-
-1. 在 MCP API App Registration 的 Manifest 中加入 [预置 App Roles](docs/entra-app-roles.json)。
-2. 打开 **Entra ID > 企业应用程序 > MCP API 应用 > 用户和组**。
-3. 添加用户或组，并分配 `mcp.mail`、`mcp.calendar`、`mcp.drive` 等角色。
-4. 需要智能邮件摘要时分配 `mcp.smart` + `mcp.mail`；需要日程冲突分析时分配 `mcp.smart` + `mcp.calendar`。
-5. 把 `MCP_ROLE_BASED_FILTERING` 改为 `true` 并重启服务。
-6. 如需阻止未分配用户登录，在 Enterprise Application 的属性中把 **Assignment required?** 设置为 **Yes**。
-
-`mcp.admin` 允许访问当前部署已加载且 Graph scope 已批准的全部工具，但它不能绕过 Graph delegated permission，也不能绕过用户原本对邮箱、站点、文件或团队的数据权限。
-
-## 工具暴露模式
-
-| 模式 | 客户端看到的工具 | 适用场景 |
-|---|---|---|
-| `direct` | 当前用户获准的全部工具 | 工具数量可控、追求最低调用延迟 |
-| `discovery` | 基础工具和动态发现工具 | 希望显著减少初始 Schema |
-| `hybrid` | 常用工具直达，长尾工具动态发现 | 推荐，兼顾中文命中速度和上下文大小 |
-
-`hybrid` 模式下，动态调用仍会重新进入统一权限、确认和审计链路，不能绕过安全策略。配置与基准见 [工具暴露基准](docs/TOOL_EXPOSURE_BENCHMARK.md)。
-
-## 写操作确认
-
-- `MCP_SEND_MODE=confirm`：邮件和 Teams 消息需要用户确认，适合交互式客户端。
-- `MCP_SEND_MODE=automatic`：允许自动发送，适合经过审批的无人值守流程。
-- `MCP_CONFIRM_OPERATIONS`：配置删除文件、创建日程、创建分享链接等其他需要确认的操作。
-
-客户端支持 MCP elicitation 时，确认在客户端内完成；不支持时，服务返回一次性 HTTPS 预览页。`automatic` 只跳过发送确认，不会跳过 OAuth、App Roles、Graph 权限或审计。
-
-## 生产检查
-
-- 只通过 HTTPS 暴露远程 MCP 和 OAuth callback。
-- 使用 Secret Manager 保存 client secret 和 `MCP_ADMIN_TOKEN`，不要提交 `.env`。
-- 启用 `MCP_ROLE_BASED_FILTERING=true`，并按最小权限给用户或组分配 App Roles。
-- 只移除已经在 Entra 中获批并完成 consent 的 `MCP_DISABLED_GRAPH_SCOPES`。
-- 保持 `MCP_AUDIT_LOG_ENABLED=true`，并把日志接入组织规定的留存和 SIEM 流程。
-- 根据场景选择 `MCP_SEND_MODE` 和 `MCP_CONFIRM_OPERATIONS`。
-- 对公网部署增加反向代理、访问日志、限流、健康检查和凭据轮换。
-
-更完整的安全边界见 [威胁模型](docs/THREAT_MODEL.md) 和 [安全策略](SECURITY.md)。
-
-## 开发与测试
-
-```bash
-npm ci
-npm test
-npm run docs:tools
-npm run benchmark:tools
-npm run check:release
-```
-
-- `npm test`：构建并运行完整测试。
-- `npm run docs:tools`：从运行时注册表重新生成工具目录。
-- `npm run benchmark:tools`：比较 direct、discovery 和 hybrid 的 Schema 大小。
-- `npm run check:release`：检查凭据、私有部署材料和开源发布必需文件。
-
-## 文档
-
-- [用户使用说明](USER_GUIDE.md)
-- [完整工具目录](docs/TOOL_CATALOG.md)
-- [Entra 登录模式、单/双应用与个人设备测试](docs/ENTRA_CONFIDENTIAL_WEB_LOGIN.md)
-- [工具暴露模式基准](docs/TOOL_EXPOSURE_BENCHMARK.md)
-- [威胁模型](docs/THREAT_MODEL.md)
-- [私有部署 overlay 说明](deploy/overlays/README.md)
-
-## 贡献与安全
-
-提交代码前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。安全问题不要创建公开 Issue，请按 [SECURITY.md](SECURITY.md) 中的方式报告。
+项目解决了你的 21V 接入问题，欢迎点一个 **Star**，也欢迎提交脱敏的使用反馈或客户端兼容性记录。贡献前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)；安全漏洞不要公开提交 Issue。
 
 ## License
 
-本项目基于 [Apache License 2.0](LICENSE) 开源。
-
-Microsoft、Microsoft 365、Microsoft Entra、Microsoft Graph 和相关名称是其各自所有者的商标。项目命名和使用边界见 [TRADEMARKS.md](TRADEMARKS.md)。
+[Apache License 2.0](LICENSE)。Microsoft、Microsoft 365、Microsoft Entra、Microsoft Graph 等名称属于各自商标权利人，参见 [TRADEMARKS.md](TRADEMARKS.md)。
