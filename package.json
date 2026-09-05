@@ -27,11 +27,14 @@
     "ms365-21v-mcp": "./dist/index.js"
   },
   "scripts": {
-    "build": "tsc && chmod +x dist/index.js",
+    "build": "tsc && node -e \"require('node:fs').chmodSync('dist/index.js', 0o755)\"",
     "dev": "tsx src/index.ts",
-    "dev:http": "MCP_TRANSPORT=http tsx src/index.ts",
+    "dev:http": "tsx src/index.ts --http",
     "start": "node dist/index.js",
-    "start:http": "MCP_TRANSPORT=http node dist/index.js",
+    "start:http": "node dist/index.js --http",
+    "setup": "node scripts/setup.mjs",
+    "doctor": "node scripts/doctor.mjs",
+    "test:onboarding": "node --test test/onboarding.test.mjs",
     "docs:tools": "npm run build && node scripts/generate-tool-catalog.mjs",
     "check:public": "node scripts/public-release-check.mjs",
     "check:release": "node scripts/public-release-check.mjs --release",
