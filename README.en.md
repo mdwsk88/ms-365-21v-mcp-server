@@ -31,6 +31,17 @@ The generated profile keeps authentication, App Roles, audit logging and confirm
 
 Already have a deployment? Use `npm run doctor`; do not replace an existing `.env`. Docker and two-application setups remain documented in [DEPLOYMENT.md](DEPLOYMENT.md).
 
+## Prebuilt Docker image
+
+After configuring Entra and `.env`, run:
+
+```bash
+docker compose -f docker-compose.release.yml pull
+docker compose -f docker-compose.release.yml up -d
+```
+
+The versioned image is `ghcr.io/mdwsk88/ms-365-21v-mcp-server:v0.1.0`, for Linux amd64/arm64. See [container setup and rollback](docs/CONTAINER.md) and [Releases](https://github.com/mdwsk88/ms-365-21v-mcp-server/releases) for deployment files and changes. The Compose file binds to localhost and persists state in a named volume; remote clients need an HTTPS reverse proxy.
+
 ## Examples after enabling the relevant modules
 
 | Ask your client | Required capability |

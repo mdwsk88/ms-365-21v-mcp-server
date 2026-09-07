@@ -6,6 +6,7 @@
 
 [![CI](https://github.com/mdwsk88/ms-365-21v-mcp-server/actions/workflows/ci.yml/badge.svg)](https://github.com/mdwsk88/ms-365-21v-mcp-server/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/mdwsk88/ms-365-21v-mcp-server)](https://github.com/mdwsk88/ms-365-21v-mcp-server/releases/latest)
 
 [快速上手](docs/QUICKSTART.md) · [完整部署](DEPLOYMENT.md) · [使用场景](USER_GUIDE.md) · [工具目录](docs/TOOL_CATALOG.md) · [English](README.en.md)
 
@@ -63,6 +64,17 @@ npm run start:http
 初始配置保持 OAuth、App Roles、审计和操作确认开启，只加载个人资料模块。后续按需启用邮件、日历等功能，不用一次申请全部权限。[逐步启用只读邮件](docs/QUICKSTART.md#启用第一个业务场景只读邮件)
 
 已有部署请先运行 `npm run doctor`，不要重新生成或覆盖 `.env`。Docker、双应用、反向代理和生产检查见[完整部署说明](DEPLOYMENT.md)。
+
+### 使用已发布的 Docker 镜像
+
+配置好 Entra 和 `.env` 后，可以直接使用镜像，无需在本机编译：
+
+```bash
+docker compose -f docker-compose.release.yml pull
+docker compose -f docker-compose.release.yml up -d
+```
+
+默认镜像为 `ghcr.io/mdwsk88/ms-365-21v-mcp-server:v0.1.0`，支持 Linux amd64 / arm64。配置文件下载、首次启动和升级回退见 [Docker 镜像说明](docs/CONTAINER.md)，更新记录见 [Releases](https://github.com/mdwsk88/ms-365-21v-mcp-server/releases)。
 
 ## 配置错了，从哪里查？
 
