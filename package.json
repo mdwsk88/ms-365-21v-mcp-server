@@ -48,7 +48,7 @@
     "@azure/msal-node": "5.3.1",
     "@modelcontextprotocol/sdk": "1.30.0",
     "dotenv": "17.4.2",
-    "jose": "6.2.3",
+    "jose": "6.2.10",
     "zod": "4.4.3"
   },
   "devDependencies": {
