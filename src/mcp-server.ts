@@ -12,7 +12,7 @@ export function createGraphMcpServer(config: AppConfig, access: ToolAccessContex
         : '';
   const server = new McpServer(
     {
-      name: 'ms-365-21v-mcp-server-pro',
+      name: 'ms-365-21v-mcp-server',
       version: '0.1.0'
     },
     {

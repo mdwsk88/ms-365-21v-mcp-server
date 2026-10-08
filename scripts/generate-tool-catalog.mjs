@@ -40,7 +40,7 @@ const enabledNames = new Set(entries.map(entry => entry.name));
 const disabledEntries = implementationRegistry.getAll().filter(entry => !enabledNames.has(entry.name));
 
 const lines = [
-  '# MS 365-21V MCP Server Pro - Tool Catalog',
+  '# MS 365-21V MCP Server - Tool Catalog',
   '',
   '> This file is generated from the runtime registry by `npm run docs:tools`. Do not edit tool rows manually.',
   '',

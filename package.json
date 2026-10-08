@@ -1,16 +1,16 @@
 {
-  "name": "ms-365-21v-mcp-server-pro",
+  "name": "ms-365-21v-mcp-server",
   "version": "0.1.0",
   "private": true,
   "description": "Policy-aware OAuth 2.1 MCP gateway for Microsoft 365 operated by 21Vianet",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/mdwsk88/ms-365-21v-mcp-server-pro.git"
+    "url": "git+https://github.com/mdwsk88/ms-365-21v-mcp-server.git"
   },
-  "homepage": "https://github.com/mdwsk88/ms-365-21v-mcp-server-pro#readme",
+  "homepage": "https://github.com/mdwsk88/ms-365-21v-mcp-server#readme",
   "bugs": {
-    "url": "https://github.com/mdwsk88/ms-365-21v-mcp-server-pro/issues"
+    "url": "https://github.com/mdwsk88/ms-365-21v-mcp-server/issues"
   },
   "keywords": [
     "mcp",
@@ -27,11 +27,14 @@
     "ms365-21v-mcp": "./dist/index.js"
   },
   "scripts": {
-    "build": "tsc && chmod +x dist/index.js",
+    "build": "tsc && node -e \"require('node:fs').chmodSync('dist/index.js', 0o755)\"",
     "dev": "tsx src/index.ts",
-    "dev:http": "MCP_TRANSPORT=http tsx src/index.ts",
+    "dev:http": "tsx src/index.ts --http",
     "start": "node dist/index.js",
-    "start:http": "MCP_TRANSPORT=http node dist/index.js",
+    "start:http": "node dist/index.js --http",
+    "setup": "node scripts/setup.mjs",
+    "doctor": "node scripts/doctor.mjs",
+    "test:onboarding": "node --test test/onboarding.test.mjs",
     "docs:tools": "npm run build && node scripts/generate-tool-catalog.mjs",
     "check:public": "node scripts/public-release-check.mjs",
     "check:release": "node scripts/public-release-check.mjs --release",
@@ -42,15 +45,15 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@azure/msal-node": "5.3.1",
-    "@modelcontextprotocol/sdk": "1.30.0",
+    "@azure/msal-node": "6.0.0",
+    "@modelcontextprotocol/sdk": "1.31.0",
     "dotenv": "17.4.2",
-    "jose": "6.2.3",
+    "jose": "6.2.10",
     "zod": "4.4.3"
   },
   "devDependencies": {
-    "@types/node": "26.0.1",
-    "tsx": "4.22.4",
+    "@types/node": "26.6.4",
+    "tsx": "4.23.13",
     "typescript": "6.0.3"
   }
 }

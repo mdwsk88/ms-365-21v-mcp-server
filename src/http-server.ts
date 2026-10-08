@@ -121,7 +121,7 @@ export async function startHttpServer(config: AppConfig): Promise<void> {
     app.get(healthPath, (_req: any, res: any) => {
       res.json({
         ok: true,
-        name: 'ms-365-21v-mcp-server-pro',
+        name: 'ms-365-21v-mcp-server',
         mode: 'http',
         auth: config.inboundAuthDisabled ? 'disabled' : 'bearer-jwt-obo',
         graphBaseUrl: config.graphBaseUrl,
@@ -281,7 +281,7 @@ export async function startHttpServer(config: AppConfig): Promise<void> {
   function listen(host: string, required: boolean): void {
     const server = app.listen(config.httpPort, host, () => {
       console.error(
-        `MS 365-21V MCP Server Pro listening on http://${hostForLog(host)}:${config.httpPort}${config.httpPath}`
+        `MS 365-21V MCP Server listening on http://${hostForLog(host)}:${config.httpPort}${config.httpPath}`
       );
       if (config.oauthHttpPath) {
         console.error(`OAuth-required MCP endpoint: ${config.resourceUrl}`);
