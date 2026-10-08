@@ -1,6 +1,6 @@
 {
   "name": "ms-365-21v-mcp-server",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Policy-aware OAuth 2.1 MCP gateway for Microsoft 365 operated by 21Vianet",
   "license": "Apache-2.0",
