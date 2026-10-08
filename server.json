@@ -4,7 +4,7 @@
   "name": "io.github.mdwsk88/ms-365-21v-mcp-server",
   "packages": [
     {
-      "identifier": "ghcr.io/mdwsk88/ms-365-21v-mcp-server",
+      "identifier": "ghcr.io/mdwsk88/ms-365-21v-mcp-server:v0.1.0",
       "registryType": "oci",
       "runtimeArguments": [
         {
@@ -31,8 +31,7 @@
       "runtimeHint": "docker",
       "transport": {
         "type": "stdio"
-      },
-      "version": "v0.1.0"
+      }
     }
   ],
   "repository": {
