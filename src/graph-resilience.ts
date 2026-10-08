@@ -120,7 +120,6 @@ export class GraphResilience {
         controller.abort();
         reject(new GraphRequestTimeoutError(this.config.timeoutMs));
       }, this.config.timeoutMs);
-      timer.unref?.();
     });
     try {
       return await Promise.race([operation(controller.signal), timeout]);

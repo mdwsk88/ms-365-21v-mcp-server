@@ -2,8 +2,8 @@
 set -euo pipefail
 
 project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-output_path="${1:-$HOME/Desktop/ms-365-21v-mcp-server-pro-agentrun.zip}"
-staging_dir="$(mktemp -d "${TMPDIR:-/tmp}/ms-365-21v-mcp-server-pro-agentrun.XXXXXX")"
+output_path="${1:-$HOME/Desktop/ms-365-21v-mcp-server-agentrun.zip}"
+staging_dir="$(mktemp -d "${TMPDIR:-/tmp}/ms-365-21v-mcp-server-agentrun.XXXXXX")"
 
 cleanup() {
   rm -rf "$staging_dir"

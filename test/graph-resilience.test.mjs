@@ -111,6 +111,7 @@ test('circuit breaker rejects requests until its cooldown elapses', async () => 
 });
 
 test('request timeout aborts a stalled Graph call', async () => {
-  const resilience = new GraphResilience(resilienceConfig({ maxRetries: 0, timeoutMs: 5 }));
+  // NB: keep this comfortably above CI timer granularity; 5 ms proved flaky on loaded runners.
+  const resilience = new GraphResilience(resilienceConfig({ maxRetries: 0, timeoutMs: 50 }));
   await assert.rejects(() => resilience.execute(async () => new Promise(() => {})), GraphRequestTimeoutError);
 });

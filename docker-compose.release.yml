@@ -1,9 +1,6 @@
 services:
   mcp-gateway:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: ms-365-21v-mcp-server:local
+    image: ghcr.io/mdwsk88/ms-365-21v-mcp-server:${MCP_IMAGE_TAG:-v0.1.0}
     init: true
     restart: unless-stopped
     env_file:
@@ -13,6 +10,9 @@ services:
       MCP_HTTP_HOST: 0.0.0.0
       MCP_HTTP_PORT: 3000
     ports:
-      - "${MCP_DOCKER_PORT:-3000}:3000"
+      - "127.0.0.1:${MCP_DOCKER_PORT:-3000}:3000"
     volumes:
-      - ./.tokens:/app/.tokens
+      - mcp-state:/app/.tokens
+
+volumes:
+  mcp-state:
