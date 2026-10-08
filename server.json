@@ -1,0 +1,45 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "description": "MCP server for Microsoft 365 on the 21Vianet China cloud: mail, calendar, files via delegated Graph.",
+  "name": "io.github.mdwsk88/ms-365-21v-mcp-server",
+  "packages": [
+    {
+      "identifier": "ghcr.io/mdwsk88/ms-365-21v-mcp-server",
+      "registryType": "oci",
+      "runtimeArguments": [
+        {
+          "type": "positional",
+          "value": "run"
+        },
+        {
+          "type": "positional",
+          "value": "-i"
+        },
+        {
+          "type": "positional",
+          "value": "--rm"
+        },
+        {
+          "type": "positional",
+          "value": "-e"
+        },
+        {
+          "type": "positional",
+          "value": "MCP_TRANSPORT=stdio"
+        }
+      ],
+      "runtimeHint": "docker",
+      "transport": {
+        "type": "stdio"
+      },
+      "version": "v0.1.0"
+    }
+  ],
+  "repository": {
+    "source": "github",
+    "url": "https://github.com/mdwsk88/ms-365-21v-mcp-server"
+  },
+  "title": "MS 365-21V MCP Server",
+  "version": "0.1.0",
+  "websiteUrl": "https://github.com/mdwsk88/ms-365-21v-mcp-server"
+}
