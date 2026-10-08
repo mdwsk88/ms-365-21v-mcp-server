@@ -10,6 +10,8 @@ RUN npm run build && npm prune --omit=dev
 
 FROM node:22-alpine AS runtime
 
+LABEL io.modelcontextprotocol.server.name="io.github.mdwsk88/ms-365-21v-mcp-server"
+
 WORKDIR /app
 ENV NODE_ENV=production \
     MCP_TRANSPORT=http \
