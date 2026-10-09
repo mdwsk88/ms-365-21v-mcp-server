@@ -10,6 +10,23 @@
 
 [快速上手](docs/QUICKSTART.md) · [完整部署](DEPLOYMENT.md) · [使用场景](USER_GUIDE.md) · [工具目录](docs/TOOL_CATALOG.md) · [English](README.en.md)
 
+## 一键接入（已有管理员部署）
+
+如果管理员已经部署好服务并给了你 MCP 地址，直接把下面这段贴进 Claude Desktop / Claude Code 的 MCP 配置，登录即用（Streamable HTTP + OAuth 2.1，不用手动填 client id / secret）：
+
+```json
+{
+  "mcpServers": {
+    "ms365-21v": {
+      "type": "streamable-http",
+      "url": "https://your-mcp-host.example.cn/mcp"
+    }
+  }
+}
+```
+
+把 `url` 换成管理员给你的地址。自己从零部署？看[快速上手](docs/QUICKSTART.md)。
+
 > 非 Microsoft 或 21Vianet 官方产品。需要世纪互联租户和管理员授权，不适用于直接连接全球版 Microsoft 365 或个人 Outlook 账号。本文中的业务示例需要对应模块与权限，初始配置只开放个人资料查询。
 
 ## 先看它能帮你做什么
