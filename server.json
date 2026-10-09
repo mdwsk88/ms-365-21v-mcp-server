@@ -4,7 +4,7 @@
   "name": "io.github.mdwsk88/ms-365-21v-mcp-server",
   "packages": [
     {
-      "identifier": "ghcr.io/mdwsk88/ms-365-21v-mcp-server:v0.1.0",
+      "identifier": "ghcr.io/mdwsk88/ms-365-21v-mcp-server:v0.1.1",
       "registryType": "oci",
       "runtimeArguments": [
         {
@@ -39,6 +39,6 @@
     "url": "https://github.com/mdwsk88/ms-365-21v-mcp-server"
   },
   "title": "MS 365-21V MCP Server",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "websiteUrl": "https://github.com/mdwsk88/ms-365-21v-mcp-server"
 }
