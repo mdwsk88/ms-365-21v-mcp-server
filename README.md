@@ -12,20 +12,26 @@
 
 ## 一键接入（已有管理员部署）
 
-如果管理员已经部署好服务并给了你 MCP 地址，直接把下面这段贴进 Claude Desktop / Claude Code 的 MCP 配置，登录即用（Streamable HTTP + OAuth 2.1，不用手动填 client id / secret）：
+管理员部署好服务并分配使用权限后，按对应客户端的方式添加 MCP 地址，再完成 OAuth 登录；不需要在客户端手动填写 client id / secret。
+
+**Claude Code**：在项目根目录的 `.mcp.json` 中加入以下配置；已有 `mcpServers` 时合并其中的服务条目：
 
 ```json
 {
   "mcpServers": {
     "ms365-21v": {
-      "type": "streamable-http",
+      "type": "http",
       "url": "https://your-mcp-host.example.cn/mcp"
     }
   }
 }
 ```
 
-把 `url` 换成管理员给你的地址。自己从零部署？看[快速上手](docs/QUICKSTART.md)。
+把 `url` 换成管理员给你的地址，启动 Claude Code 后运行 `/mcp`，按提示登录。[Claude Code 官方说明](https://code.claude.com/docs/en/mcp)
+
+**Claude Desktop**：在 **Customize（自定义）→ Connectors（连接器）→ Add custom connector（添加自定义连接器）** 中填写远程 MCP 地址，按提示连接并登录。不要把上面的 Claude Code JSON 直接放进 Desktop 的本地配置。远程连接由 Anthropic 云端发起，服务地址需允许其访问，不能填写你电脑的 `localhost`。[Claude Desktop 官方说明](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp)
+
+使用 WorkBuddy、Qoder Work、Codex 或 Dify？看[客户端接入说明](USER_GUIDE.md)。自己从零部署？看[快速上手](docs/QUICKSTART.md)。
 
 > 非 Microsoft 或 21Vianet 官方产品。需要世纪互联租户和管理员授权，不适用于直接连接全球版 Microsoft 365 或个人 Outlook 账号。本文中的业务示例需要对应模块与权限，初始配置只开放个人资料查询。
 
@@ -91,7 +97,7 @@ docker compose -f docker-compose.release.yml pull
 docker compose -f docker-compose.release.yml up -d
 ```
 
-默认镜像为 `ghcr.io/mdwsk88/ms-365-21v-mcp-server:v0.1.0`，支持 Linux amd64 / arm64。配置文件下载、首次启动和升级回退见 [Docker 镜像说明](docs/CONTAINER.md)，更新记录见 [Releases](https://github.com/mdwsk88/ms-365-21v-mcp-server/releases)。
+默认镜像为 `ghcr.io/mdwsk88/ms-365-21v-mcp-server:v0.1.1`，支持 Linux amd64 / arm64。使用旧版 Compose 文件时，在 `.env` 中设置 `MCP_IMAGE_TAG=v0.1.1` 后再执行上述命令；已有该设置时以你指定的版本为准。配置文件下载、首次启动和升级回退见 [Docker 镜像说明](docs/CONTAINER.md)，更新记录见 [Releases](https://github.com/mdwsk88/ms-365-21v-mcp-server/releases)。
 
 ## 配置错了，从哪里查？
 

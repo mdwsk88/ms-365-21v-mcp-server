@@ -1,6 +1,6 @@
 services:
   mcp-gateway:
-    image: ghcr.io/mdwsk88/ms-365-21v-mcp-server:${MCP_IMAGE_TAG:-v0.1.0}
+    image: ghcr.io/mdwsk88/ms-365-21v-mcp-server:${MCP_IMAGE_TAG:-v0.1.1}
     init: true
     restart: unless-stopped
     env_file:
