@@ -97,7 +97,7 @@ docker compose -f docker-compose.release.yml pull
 docker compose -f docker-compose.release.yml up -d
 ```
 
-默认镜像为 `ghcr.io/mdwsk88/ms-365-21v-mcp-server:v0.1.1`，支持 Linux amd64 / arm64。使用旧版 Compose 文件时，在 `.env` 中设置 `MCP_IMAGE_TAG=v0.1.1` 后再执行上述命令；已有该设置时以你指定的版本为准。配置文件下载、首次启动和升级回退见 [Docker 镜像说明](docs/CONTAINER.md)，更新记录见 [Releases](https://github.com/mdwsk88/ms-365-21v-mcp-server/releases)。
+默认镜像为 `ghcr.io/mdwsk88/ms-365-21v-mcp-server:v0.2.0`，支持 Linux amd64 / arm64。使用旧版 Compose 文件时，在 `.env` 中设置 `MCP_IMAGE_TAG=v0.2.0` 后再执行上述命令；已有该设置时以你指定的版本为准。配置文件下载、首次启动和升级回退见 [Docker 镜像说明](docs/CONTAINER.md)，更新记录见 [Releases](https://github.com/mdwsk88/ms-365-21v-mcp-server/releases)。
 
 ## 配置错了，从哪里查？
 

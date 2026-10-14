@@ -2,7 +2,7 @@
 
 [首页](../README.md) · [版本下载](https://github.com/mdwsk88/ms-365-21v-mcp-server/releases) · [完整部署](../DEPLOYMENT.md)
 
-镜像：`ghcr.io/mdwsk88/ms-365-21v-mcp-server:v0.1.1`，支持 `linux/amd64` 和 `linux/arm64`。Docker 自动选择对应架构，无需在本机编译服务。建议固定版本标签；`latest` 会随版本发布更新。
+镜像：`ghcr.io/mdwsk88/ms-365-21v-mcp-server:v0.2.0`，支持 `linux/amd64` 和 `linux/arm64`。Docker 自动选择对应架构，无需在本机编译服务。建议固定版本标签；`latest` 会随版本发布更新。
 
 ## 首次启动
 
@@ -10,12 +10,12 @@
 2. 获取版本文件，运行配置向导；向导需要 Node.js 22+，无需先安装 npm 依赖：
 
    ```bash
-   git clone --branch v0.1.1 https://github.com/mdwsk88/ms-365-21v-mcp-server.git
+   git clone --branch v0.2.0 https://github.com/mdwsk88/ms-365-21v-mcp-server.git
    cd ms-365-21v-mcp-server
    npm run setup
    ```
 
-3. 编辑生成的 `.env`，填写 `MS_CLIENT_SECRET` 的 Value，并设置 `MCP_IMAGE_TAG=v0.1.1`。历史标签或 Release 附件中的 Compose 文件可能仍默认旧镜像，这个设置可明确选择目标版本。保留已有配置时直接编辑原文件，不要覆盖凭据。检查后启动：
+3. 编辑生成的 `.env`，填写 `MS_CLIENT_SECRET` 的 Value，并设置 `MCP_IMAGE_TAG=v0.2.0`。历史标签或 Release 附件中的 Compose 文件可能仍默认旧镜像，这个设置可明确选择目标版本。保留已有配置时直接编辑原文件，不要覆盖凭据。检查后启动：
 
    ```bash
    npm run doctor

@@ -51,6 +51,7 @@ export type AppConfig = {
   transport: 'stdio' | 'http';
   httpPort: number;
   httpHost: string;
+  allowedHosts: string[];
   httpPath: string;
   oauthHttpPath?: string;
   httpStateless: boolean;
@@ -155,6 +156,43 @@ function parseList(value: string | undefined): string[] {
 function normalizeHttpPath(value: string | undefined): string {
   const pathValue = value?.trim() || '/mcp';
   return stripTrailingSlashExceptRoot(pathValue.startsWith('/') ? pathValue : `/${pathValue}`);
+}
+
+/** Host name of a URL or host[:port] value, lower-cased; IPv6 keeps its brackets. */
+function hostnameOf(value: string): string | undefined {
+  const candidate = /^[a-z][a-z0-9+.-]*:\/\//i.test(value) ? value : `http://${value}`;
+  try {
+    return new URL(candidate).hostname || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function parseAllowedHosts(value: string | undefined): string[] {
+  const hostnames = parseList(value).map(entry => {
+    const hostname = hostnameOf(entry);
+    if (!hostname) throw new ConfigError(`MCP_ALLOWED_HOSTS contains an invalid host name: ${entry}`);
+    return hostname;
+  });
+  return [...new Set(hostnames)];
+}
+
+const loopbackHttpHosts = new Set(['127.0.0.1', 'localhost', '::1']);
+
+/**
+ * Host header allow-list for DNS-rebinding protection. A loopback bind, as behind a same-host
+ * reverse proxy, accepts the localhost names plus the configured public host names, so proxied
+ * requests that keep the public Host header still pass. MCP_ALLOWED_HOSTS adds names and also turns
+ * the check on for other binds. Without it, an all-interfaces bind keeps the SDK default (no check).
+ */
+export function hostHeaderAllowList(
+  config: Pick<AppConfig, 'httpHost' | 'allowedHosts' | 'resourceUrl' | 'publicBaseUrl' | 'oauthBridgeIssuer'>
+): string[] | undefined {
+  if (config.allowedHosts.length === 0 && !loopbackHttpHosts.has(config.httpHost)) return undefined;
+  const publicHosts = [config.resourceUrl, config.publicBaseUrl, config.oauthBridgeIssuer]
+    .map(value => (value ? hostnameOf(value) : undefined))
+    .filter((value): value is string => Boolean(value));
+  return [...new Set(['localhost', '127.0.0.1', '[::1]', ...publicHosts, ...config.allowedHosts])];
 }
 
 function publicPathPrefixFromUrl(value: string): string {
@@ -290,6 +328,7 @@ export function loadConfig(): AppConfig {
   const transport = parseTransport();
   const httpPort = integerEnv('MCP_HTTP_PORT', 3000);
   const httpHost = optionalEnv('MCP_HTTP_HOST') ?? '127.0.0.1';
+  const allowedHosts = parseAllowedHosts(optionalEnv('MCP_ALLOWED_HOSTS'));
   const httpPath = normalizeHttpPath(optionalEnv('MCP_HTTP_PATH'));
   const oauthHttpPathValue = optionalEnv('MCP_OAUTH_HTTP_PATH');
   const oauthHttpPath = oauthHttpPathValue ? normalizeHttpPath(oauthHttpPathValue) : undefined;
@@ -414,6 +453,7 @@ export function loadConfig(): AppConfig {
     transport,
     httpPort,
     httpHost,
+    allowedHosts,
     httpPath,
     oauthHttpPath,
     httpStateless,

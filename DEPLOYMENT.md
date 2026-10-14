@@ -214,7 +214,8 @@ MS_GRAPH_BASE_URL=https://microsoftgraph.chinacloudapi.cn/v1.0
 
 # 服务公开地址，不包含 /mcp
 MCP_PUBLIC_BASE_URL=https://mcp.example.cn
-MCP_HTTP_HOST=0.0.0.0
+# 同机反向代理（如 Nginx）用 127.0.0.1，Node 端口不对外开放；只有容器内才用 0.0.0.0
+MCP_HTTP_HOST=127.0.0.1
 MCP_HTTP_PORT=3000
 MCP_HTTP_PATH=/mcp
 
@@ -348,6 +349,16 @@ npm run dev:http
 - 直达集合用 `MCP_DIRECT_TOOLS` 和 `MCP_DIRECT_TOOL_CATEGORIES` 调整，设为 `none` 表示不直达任何业务工具。
 
 配置与基准见 [工具暴露基准](docs/TOOL_EXPOSURE_BENCHMARK.md)。
+
+文档类直达工具 `files_search`、`files_get_download_url` 需要 `mcp.drive` 角色；访问 SharePoint 中的文件还需要 `mcp.sharepoint`。只有 `mcp.drive` 的用户只能搜到和读取 OneDrive 文件，请求 SharePoint 站点或文件会返回 `permission_denied`。这样新工具沿用原有的 OneDrive / SharePoint 角色边界，升级不需要修改 Entra 中的 App Roles、API 权限或回调地址。
+
+## 反向代理与 Host 头校验
+
+服务监听 `127.0.0.1` 时会校验请求的 Host 头，防止 DNS 重绑定。默认接受 `localhost`、`127.0.0.1`、`[::1]`，以及 `MCP_PUBLIC_BASE_URL`、`MCP_RESOURCE_URL`、`MCP_OAUTH_BRIDGE_ISSUER` 中的主机名。所以 Nginx 用 `proxy_set_header Host $host` 转发公网域名时可以直接使用，不需要额外配置。
+
+- 代理转发的是其他 Host（例如内网域名）时，加到 `MCP_ALLOWED_HOSTS`。
+- 容器内必须监听 `0.0.0.0`，此时默认不校验 Host；在 `MCP_ALLOWED_HOSTS` 中填写域名即可开启校验。
+- 不在允许列表中的 Host 会收到 `403 Invalid Host`。服务启动日志会打印实际接受的 Host 列表。
 
 ## 写操作确认
 
