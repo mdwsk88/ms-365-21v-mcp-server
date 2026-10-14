@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { loadConfig } from '../dist/config.js';
+import { defaultDirectTools, loadConfig } from '../dist/config.js';
 import { createHydratedToolRegistry } from '../dist/tools/index.js';
 
 const projectRoot = fileURLToPath(new URL('..', import.meta.url));
@@ -28,8 +28,13 @@ const baseConfig = {
   enableRawGraphGet: false,
   roleBasedFiltering: true,
   auditLogEnabled: false,
-  confirmOperations: ['production-confirmation-enabled']
+  confirmOperations: ['production-confirmation-enabled'],
+  toolExposureMode: 'hybrid',
+  directTools: defaultDirectTools,
+  directToolCategories: []
 };
+const isListedDirectly = tool => tool.category === 'gateway' || defaultDirectTools.includes(tool.name);
+const moduleLabel = (category, tools) => (category === 'gateway' ? 'Gateway Controls' : tools[0]?.module ?? category);
 const implementationRegistry = createHydratedToolRegistry({ ...baseConfig, disabledGraphScopes: [] });
 const registry = createHydratedToolRegistry({
   ...baseConfig,
@@ -46,6 +51,8 @@ const lines = [
   '',
   `The implementation contains **${implementationRegistry.getAll().length} tools**. The current production permission boundary exposes **${entries.length} tools** and hides **${disabledEntries.length} tools** whose Graph delegated scopes are not approved. Every enabled business tool is mapped to an Entra App Role and one or more Microsoft Graph delegated permissions.`,
   '',
+  `In the default \`hybrid\` exposure mode, clients list only the **${entries.filter(isListedDirectly).length} tools** marked *Direct* below (read-only Teams chat, mail, calendar and file scenarios plus gateway controls). Every other authorized tool is reached through \`gateway_search_tools\` and \`gateway_execute_tool\` with the same App Role, confirmation and audit checks. Change the direct set with \`MCP_DIRECT_TOOLS\`.`,
+  '',
   '## Summary',
   '',
   '| Module | Tools | Read | Write | App Role |',
@@ -56,16 +63,17 @@ for (const category of registry.getAllCategories()) {
   const tools = registry.getByCategory(category);
   const writes = tools.filter((tool) => tool.isWriteOperation).length;
   const roles = unique(tools.flatMap((tool) => tool.requiredRoles ?? [])).map(code).join(', ') || '-';
-  lines.push(`| ${escapeCell(tools[0]?.module ?? category)} | ${tools.length} | ${tools.length - writes} | ${writes} | ${roles} |`);
+  lines.push(`| ${escapeCell(moduleLabel(category, tools))} | ${tools.length} | ${tools.length - writes} | ${writes} | ${roles} |`);
 }
 
 for (const category of registry.getAllCategories()) {
   const tools = registry.getByCategory(category).sort((left, right) => left.name.localeCompare(right.name));
-  lines.push('', `## ${tools[0]?.module ?? category}`, '', '| Tool | Title | Access | Required App Roles | Graph delegated scopes |', '|---|---|---|---|---|');
+  lines.push('', `## ${moduleLabel(category, tools)}`, '', '| Tool | Title | Access | Listed | Required App Roles | Graph delegated scopes |', '|---|---|---|---|---|---|');
   for (const tool of tools) {
     const roles = (tool.requiredRoles ?? []).map(code).join(', ') || '-';
     const scopes = tool.graphScopes.map(code).join(', ') || '-';
-    lines.push(`| ${code(tool.name)} | ${escapeCell(tool.title ?? tool.name)} | ${tool.isWriteOperation ? 'Write' : 'Read'} | ${roles} | ${scopes} |`);
+    const listed = isListedDirectly(tool) ? 'Direct' : 'Discovery';
+    lines.push(`| ${code(tool.name)} | ${escapeCell(tool.title ?? tool.name)} | ${tool.isWriteOperation ? 'Write' : 'Read'} | ${listed} | ${roles} | ${scopes} |`);
   }
 }
 

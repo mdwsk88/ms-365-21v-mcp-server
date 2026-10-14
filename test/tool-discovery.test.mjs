@@ -106,7 +106,7 @@ test('every deployed business tool can publish a discovery JSON schema', async (
   const entries = createToolRegistry(runtimeConfig)
     .getAll()
     .filter(entry => entry.category !== 'gateway');
-  assert.equal(entries.length, 148);
+  assert.equal(entries.length, 149);
   for (const entry of entries) {
     const schema = await callAs(server, ['mcp.admin'], 'gateway_get_tool_schema', {
       toolName: entry.name

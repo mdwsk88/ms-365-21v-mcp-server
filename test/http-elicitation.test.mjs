@@ -55,7 +55,8 @@ test('Streamable HTTP supports native elicitation and a readable browser fallbac
       MCP_OAUTH_BRIDGE_ENABLED: 'false',
       MCP_ROLE_BASED_FILTERING: 'false',
       MCP_AUDIT_LOG_ENABLED: 'false',
-      MCP_CONFIRM_OPERATIONS: 'send_email'
+      MCP_CONFIRM_OPERATIONS: 'send_email',
+      MCP_TOOL_EXPOSURE_MODE: 'direct'
     },
     stdio: ['ignore', 'pipe', 'pipe']
   });

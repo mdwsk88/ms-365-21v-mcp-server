@@ -8,24 +8,21 @@ import {
   getMailFolder,
   getMessageAttachment,
   listChildMailFolders,
-  listFolderMessages,
   updateMailFolder
 } from '../graph-extended.js';
 import {
   createDraftMessage,
   deleteMessage,
   forwardMessage,
-  getMessage,
   listMailFolders,
   listMessageAttachments,
-  listMyMessages,
   moveMessage,
   replyToMessage,
-  searchMyMessages,
   sendDraftMessage,
   sendMail,
   updateMessageReadState
 } from '../graph.js';
+import { listMailOverview, readMailMessage, searchMailOverview } from '../graph-scenarios.js';
 import { recipientSchema } from './schemas.js';
 import { describeTool, runTool } from './results.js';
 import type { ToolModule } from './types.js';
@@ -42,7 +39,6 @@ export const mailModule: ToolModule = {
     'mail_list_folders',
     'mail_get_folder',
     'mail_list_child_folders',
-    'mail_list_folder_messages',
     'mail_create_folder',
     'mail_update_folder',
     'mail_delete_folder',
@@ -66,15 +62,28 @@ export const mailModule: ToolModule = {
       {
         title: 'List My Mail',
         description: describeTool(
-          'List recent messages in the signed-in user mailbox. Supports recent mail and unread mail queries. Requires delegated Mail.Read.',
-          ['查看我的邮件', '看最近邮件', '查看未读邮件', '列出收件箱邮件']
+          'List mail newest first with sender, recipients, preview, read and flag state. Filter by folder (inbox by default, or all), time window, unread, flagged, importance or sender address. Use mail_search_messages for keywords. Requires delegated Mail.Read.',
+          ['查看我的邮件', '看最近邮件', '查看未读邮件', '查看标旗邮件', '某段时间的邮件', '列出收件箱邮件']
         ),
         inputSchema: {
-          top: z.number().int().min(1).max(50).optional().describe('Number of messages to return, from 1 to 50.'),
-          unreadOnly: z.boolean().optional().describe('Whether to return unread messages only.')
-        }
+          top: z.number().int().min(1).max(50).optional().describe('Messages to return, from 1 to 50. Defaults to 20.'),
+          folder: z
+            .string()
+            .min(1)
+            .max(300)
+            .optional()
+            .describe('inbox (default), all, sentitems, drafts, deleteditems, archive, junkemail, or a folder ID.'),
+          since: z.string().max(40).optional().describe('Received at or after this ISO date-time (China Standard Time if no offset).'),
+          until: z.string().max(40).optional().describe('Received before this ISO date-time.'),
+          unreadOnly: z.boolean().optional().describe('Only unread messages.'),
+          flaggedOnly: z.boolean().optional().describe('Only flagged (follow-up) messages.'),
+          importance: z.enum(['low', 'normal', 'high']).optional().describe('Only this importance.'),
+          from: z.string().max(320).optional().describe('Only messages from this sender email address.'),
+          cursor: z.string().max(4000).optional().describe('nextCursor from the previous call.')
+        },
+        annotations: { readOnlyHint: true, openWorldHint: true }
       },
-      async ({ top, unreadOnly }) => runTool(async () => listMyMessages(config, top, unreadOnly))
+      async input => runTool(async () => listMailOverview(config, input))
     );
 
     server.registerTool(
@@ -82,15 +91,18 @@ export const mailModule: ToolModule = {
       {
         title: 'Search My Mail',
         description: describeTool(
-          'Search messages in the signed-in user mailbox by keyword. Requires delegated Mail.Read.',
-          ['搜索邮件', '按关键词查邮件', '查找某封邮件']
+          'Search mail by keywords with KQL, for example "budget", "from:Zhang Wei", "subject:review", "hasAttachments:true". Searches all folders unless folder is set. Requires delegated Mail.Read.',
+          ['搜索邮件', '按关键词查邮件', '查找某人发的邮件', '查找某封邮件']
         ),
         inputSchema: {
-          query: z.string().min(1).max(200).describe('Search query, such as sender, subject, or body keywords.'),
-          top: z.number().int().min(1).max(50).optional().describe('Number of messages to return, from 1 to 50.')
-        }
+          query: z.string().min(1).max(200).describe('Keywords or KQL such as from:, to:, subject:, body:, hasAttachments:.'),
+          top: z.number().int().min(1).max(50).optional().describe('Messages to return, from 1 to 50. Defaults to 20.'),
+          folder: z.string().min(1).max(300).optional().describe('Limit to a folder such as inbox; defaults to all folders.'),
+          cursor: z.string().max(4000).optional().describe('nextCursor from the previous call.')
+        },
+        annotations: { readOnlyHint: true, openWorldHint: true }
       },
-      async ({ query, top }) => runTool(async () => searchMyMessages(config, query, top))
+      async input => runTool(async () => searchMailOverview(config, input))
     );
 
     server.registerTool(
@@ -98,14 +110,23 @@ export const mailModule: ToolModule = {
       {
         title: 'Get Mail Details',
         description: describeTool(
-          'Read detailed content for a message, including body, sender, recipients, and attachment flag. Requires delegated Mail.Read.',
-          ['查看邮件详情', '读取邮件正文', '查看邮件内容', '查看邮件收件人']
+          'Read one message as plain text with recipients and attachment list. onlyNewContent drops quoted earlier mails; long bodies continue with offset. Requires delegated Mail.Read.',
+          ['查看邮件详情', '读取邮件正文', '查看邮件内容', '查看邮件附件列表']
         ),
         inputSchema: {
-          messageId: z.string().min(1).max(300).describe('Message ID from a mail list or search result.')
-        }
+          messageId: z.string().min(1).max(300).describe('Message ID from a mail list or search result.'),
+          bodyFormat: z.enum(['text', 'html']).optional().describe('Body format. Defaults to text.'),
+          onlyNewContent: z
+            .boolean()
+            .optional()
+            .describe('Return only the content new in this message, without the quoted thread. Defaults to false.'),
+          maxChars: z.number().int().min(200).max(100000).optional().describe('Maximum body characters. Defaults to 20000.'),
+          offset: z.number().int().min(0).optional().describe('Body character offset, from body.nextOffset of a previous call.'),
+          includeAttachments: z.boolean().optional().describe('Include the attachment list. Defaults to true.')
+        },
+        annotations: { readOnlyHint: true, openWorldHint: true }
       },
-      async ({ messageId }) => runTool(async () => getMessage(config, messageId))
+      async input => runTool(async () => readMailMessage(config, input))
     );
 
     server.registerTool(
@@ -156,25 +177,6 @@ export const mailModule: ToolModule = {
       },
       async ({ folderId, top, includeHidden }) =>
         runTool(async () => listChildMailFolders(config, folderId, top, includeHidden))
-    );
-
-    server.registerTool(
-      'mail_list_folder_messages',
-      {
-        title: 'List Mail In Folder',
-        description: describeTool('List recent messages in a selected mailbox folder. Requires delegated Mail.Read.', [
-          '查看指定文件夹邮件',
-          '查看归档邮件',
-          '列出草稿箱邮件'
-        ]),
-        inputSchema: {
-          folderId: z.string().min(1).max(300).describe('Folder ID or well-known folder name.'),
-          top: z.number().int().min(1).max(50).optional().describe('Number of messages to return.'),
-          unreadOnly: z.boolean().optional().describe('Whether to return unread messages only.')
-        }
-      },
-      async ({ folderId, top, unreadOnly }) =>
-        runTool(async () => listFolderMessages(config, folderId, top, unreadOnly))
     );
 
     server.registerTool(

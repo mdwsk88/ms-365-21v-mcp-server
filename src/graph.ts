@@ -26,6 +26,8 @@ export type GraphRequestOptions = {
   headers?: Record<string, string>;
   responseType?: 'auto' | 'base64';
   maxResponseBytes?: number;
+  /** 'manual' returns { status, location } for a redirect instead of following it. */
+  redirect?: 'follow' | 'manual';
 };
 
 type RecipientInput = {
@@ -113,9 +115,13 @@ export async function graphRequest(
   }
 
   const response = await getGraphResilience(config).execute(
-    signal => fetch(url, { method, headers, body, signal }),
+    signal => fetch(url, { method, headers, body, signal, redirect: options.redirect ?? 'follow' }),
     { retryTransientFailures: method !== 'POST' }
   );
+  if (options.redirect === 'manual' && [301, 302, 303, 307, 308].includes(response.status)) {
+    await response.body?.cancel().catch(() => undefined);
+    return { status: response.status, location: response.headers.get('location') ?? undefined };
+  }
   if (response.status === 204 || response.status === 202) {
     return {
       ok: true,
@@ -295,18 +301,6 @@ export async function getUser(config: AppConfig, userIdOrPrincipalName: string):
   });
 }
 
-export async function listMyMessages(config: AppConfig, top?: number, unreadOnly?: boolean): Promise<unknown> {
-  return graphRequest(config, 'GET', '/me/messages', {
-    query: {
-      $top: clampTop(top, 10, 50),
-      $select: 'id,subject,from,toRecipients,ccRecipients,receivedDateTime,webLink,isRead,importance,hasAttachments',
-      $orderby: 'receivedDateTime desc',
-      $filter: unreadOnly ? 'isRead eq false' : undefined
-    },
-    scopes: ['Mail.Read']
-  });
-}
-
 export async function listMyMessagesSince(config: AppConfig, since: Date, top = 50): Promise<unknown> {
   return graphRequest(config, 'GET', '/me/messages', {
     query: {
@@ -315,27 +309,6 @@ export async function listMyMessagesSince(config: AppConfig, since: Date, top = 
         'id,subject,from,receivedDateTime,webLink,isRead,importance,hasAttachments,flag',
       $orderby: 'receivedDateTime desc',
       $filter: `receivedDateTime ge ${since.toISOString()}`
-    },
-    scopes: ['Mail.Read']
-  });
-}
-
-export async function searchMyMessages(config: AppConfig, query: string, top?: number): Promise<unknown> {
-  return graphRequest(config, 'GET', '/me/messages', {
-    query: {
-      $search: `"${query.replace(/"/g, '\\"')}"`,
-      $top: clampTop(top, 10, 50),
-      $select: 'id,subject,from,receivedDateTime,webLink,isRead,importance,hasAttachments'
-    },
-    scopes: ['Mail.Read']
-  });
-}
-
-export async function getMessage(config: AppConfig, messageId: string): Promise<unknown> {
-  return graphRequest(config, 'GET', `/me/messages/${pathSegment(messageId)}`, {
-    query: {
-      $select:
-        'id,subject,from,toRecipients,ccRecipients,bccRecipients,receivedDateTime,sentDateTime,bodyPreview,body,webLink,isRead,importance,hasAttachments'
     },
     scopes: ['Mail.Read']
   });

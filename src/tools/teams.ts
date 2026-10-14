@@ -18,11 +18,10 @@ import {
   softDeleteChatMessage,
   updateTeamChannel
 } from '../graph-extended.js';
+import { listChatMessagesWindow, listChatsOverview } from '../graph-scenarios.js';
 import {
   listChannelMessageReplies,
   listChannelMessages,
-  listChatMessages,
-  listMyChats,
   listMyJoinedTeams,
   listTeamChannels,
   replyToChannelMessage,
@@ -402,14 +401,28 @@ export const teamsModule: ToolModule = {
       {
         title: 'List My Teams Chats',
         description: describeTool(
-          'List one-on-one and group Teams chats involving the signed-in user. Requires delegated Chat.Read.',
-          ['查看Teams聊天', '列出Teams会话', '查看群聊和私聊']
+          'List one-on-one, group and meeting Teams chats, most recently active first, with member names and the last message. Use since to keep only chats with new messages, and query to find a chat by person or topic. Requires delegated Chat.Read.',
+          ['查看Teams聊天', '找和某人的聊天', '最近有新消息的聊天', '查看群聊和私聊', '列出Teams会话']
         ),
         inputSchema: {
-          top: z.number().int().min(1).max(50).optional().describe('Number of chats to return, from 1 to 50.')
-        }
+          top: z.number().int().min(1).max(50).optional().describe('Maximum chats to return, from 1 to 50. Defaults to 20.'),
+          since: z
+            .string()
+            .max(40)
+            .optional()
+            .describe('Only chats whose last message is at or after this ISO date-time. Without an offset, China Standard Time is assumed.'),
+          query: z
+            .string()
+            .max(100)
+            .optional()
+            .describe('Match a member name, member email or chat topic. Space-separated words must all match.'),
+          chatType: z.enum(['oneOnOne', 'group', 'meeting']).optional().describe('Only this chat type.'),
+          cursor: z.string().max(4000).optional().describe('nextCursor from the previous call, with the same other arguments.')
+        },
+        annotations: { readOnlyHint: true, openWorldHint: true }
       },
-      async ({ top }) => runTool(async () => listMyChats(config, top))
+      async ({ top, since, query, chatType, cursor }) =>
+        runTool(async () => listChatsOverview(config, { top, since, query, chatType, cursor }))
     );
 
     server.registerTool(
@@ -486,17 +499,28 @@ export const teamsModule: ToolModule = {
       'teams_list_chat_messages',
       {
         title: 'List Teams Chat Messages',
-        description: describeTool('List recent messages in a Teams chat. Requires delegated Chat.Read.', [
-          '查看Teams聊天消息',
-          '读取聊天记录',
-          '查看群聊消息'
-        ]),
+        description: describeTool(
+          'Read messages in a Teams chat as plain text, oldest first within a page, with sender, @mentions and shared files. Supports a since/until window and nextCursor for older messages. Requires delegated Chat.Read.',
+          ['查看Teams聊天消息', '读取聊天记录', '查看群聊消息', '看某段时间的聊天']
+        ),
         inputSchema: {
           chatId: z.string().min(1).max(300).describe('Chat ID from teams_list_chats.'),
-          top: z.number().int().min(1).max(50).optional().describe('Number of messages to return, from 1 to 50.')
-        }
+          top: z.number().int().min(1).max(50).optional().describe('Messages to fetch per page, from 1 to 50. Defaults to 20.'),
+          since: z.string().max(40).optional().describe('Only messages sent at or after this ISO date-time (China Standard Time if no offset).'),
+          until: z.string().max(40).optional().describe('Only messages sent before this ISO date-time.'),
+          cursor: z.string().max(4000).optional().describe('nextCursor from the previous call, with the same other arguments.'),
+          includeSystemMessages: z
+            .boolean()
+            .optional()
+            .describe('Include system events such as members added or meeting started. Defaults to false.'),
+          format: z.enum(['text', 'html']).optional().describe('Message body format. Defaults to text.')
+        },
+        annotations: { readOnlyHint: true, openWorldHint: true }
       },
-      async ({ chatId, top }) => runTool(async () => listChatMessages(config, chatId, top))
+      async ({ chatId, top, since, until, cursor, includeSystemMessages, format }) =>
+        runTool(async () =>
+          listChatMessagesWindow(config, { chatId, top, since, until, cursor, includeSystemMessages, format })
+        )
     );
 
     server.registerTool(
