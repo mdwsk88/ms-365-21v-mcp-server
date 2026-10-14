@@ -34,3 +34,15 @@ test('Docker defaults and onboarding documents agree on the release version', ()
   }
   assert.ok(read('docs/CONTAINER.md').includes(`git clone --branch ${tag} `));
 });
+
+test('server.json matches the release version and the image ownership label', () => {
+  const { version } = JSON.parse(read('package.json'));
+  const server = JSON.parse(read('server.json'));
+  assert.equal(server.version, version, 'server.json version must match package.json');
+  assert.ok(server.packages.length > 0);
+  for (const entry of server.packages) {
+    assert.ok(entry.identifier.endsWith(`:v${version}`), `${entry.identifier} must use the v${version} image tag`);
+  }
+  const label = read('Dockerfile').match(/io\.modelcontextprotocol\.server\.name="([^"]+)"/)?.[1];
+  assert.equal(label, server.name, 'the image label lets the MCP Registry verify ownership');
+});

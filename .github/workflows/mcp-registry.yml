@@ -1,0 +1,111 @@
+name: MCP Registry
+
+# Publishes server.json to the official MCP Registry after a tagged release.
+# GitHub Actions OIDC proves ownership of the io.github.mdwsk88 namespace,
+# so no registry credential is stored in the repository.
+on:
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Released version tag to publish, for example v0.2.0
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mcp-registry
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    # The Release workflow runs on push only for v* tags, after its image and GitHub Release succeed.
+    if: >-
+      github.repository == 'mdwsk88/ms-365-21v-mcp-server' &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.workflow_run.head_branch }}
+      RELEASED_SHA: ${{ github.event.workflow_run.head_sha }}
+      REGISTRY_URL: https://registry.modelcontextprotocol.io
+      MCP_PUBLISHER_VERSION: 1.8.1
+      MCP_PUBLISHER_SHA256: a06c9096dcb9727c13555b6be26c7effa707b01f06a4c561ba7a3635443cf2cc
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Validate release tag
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Expected a vX.Y.Z tag, got '$RELEASE_TAG'."
+            exit 1
+          fi
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json tagName > /dev/null
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: refs/tags/${{ env.RELEASE_TAG }}
+          persist-credentials: false
+      - name: Check release metadata
+        id: metadata
+        run: |
+          if [[ -n "$RELEASED_SHA" && "$(git rev-parse HEAD)" != "$RELEASED_SHA" ]]; then
+            echo "::error::$RELEASE_TAG no longer points at the released commit $RELEASED_SHA."
+            exit 1
+          fi
+          version="${RELEASE_TAG#v}"
+          if ! jq -e --arg version "$version" --arg tag "$RELEASE_TAG" \
+            '.version == $version and all(.packages[]; .identifier | endswith(":" + $tag))' server.json > /dev/null; then
+            echo "::error::server.json must have version $version and package identifiers ending in :$RELEASE_TAG."
+            exit 1
+          fi
+          {
+            echo "name=$(jq -r .name server.json)"
+            echo "version=$version"
+          } >> "$GITHUB_OUTPUT"
+      - name: Install mcp-publisher
+        run: |
+          curl -fsSL --retry 3 -o mcp-publisher.tar.gz \
+            "https://github.com/modelcontextprotocol/registry/releases/download/v${MCP_PUBLISHER_VERSION}/mcp-publisher_linux_amd64.tar.gz"
+          echo "${MCP_PUBLISHER_SHA256}  mcp-publisher.tar.gz" | sha256sum --check --strict
+          tar -xzf mcp-publisher.tar.gz mcp-publisher
+          ./mcp-publisher --version
+      - name: Check whether this version is already listed
+        id: listed
+        env:
+          SERVER_NAME: ${{ steps.metadata.outputs.name }}
+          SERVER_VERSION: ${{ steps.metadata.outputs.version }}
+        run: |
+          url="$REGISTRY_URL/v0/servers/$(jq -rn --arg name "$SERVER_NAME" '$name | @uri')/versions/$SERVER_VERSION"
+          status=$(curl -sS --retry 3 --retry-all-errors --max-time 60 -o /dev/null -w '%{http_code}' "$url")
+          case "$status" in
+            200)
+              echo "listed=true" >> "$GITHUB_OUTPUT"
+              echo "::notice::$SERVER_NAME $SERVER_VERSION is already in the MCP Registry; publishing is skipped."
+              ;;
+            404) echo "listed=false" >> "$GITHUB_OUTPUT" ;;
+            *)
+              echo "::error::MCP Registry returned HTTP $status for $url"
+              exit 1
+              ;;
+          esac
+      - name: Log in with GitHub Actions OIDC
+        run: ./mcp-publisher login github-oidc
+      - name: Publish server.json
+        if: steps.listed.outputs.listed == 'false'
+        run: ./mcp-publisher publish
+      - name: Confirm the listing
+        env:
+          SERVER_NAME: ${{ steps.metadata.outputs.name }}
+          SERVER_VERSION: ${{ steps.metadata.outputs.version }}
+        run: |
+          url="$REGISTRY_URL/v0/servers/$(jq -rn --arg name "$SERVER_NAME" '$name | @uri')/versions/$SERVER_VERSION"
+          curl -fsS --retry 5 --retry-all-errors --max-time 60 "$url" > listing.json
+          jq -r '._meta["io.modelcontextprotocol.registry/official"] as $meta
+            | "\(.server.name) \(.server.version) in the MCP Registry: status \($meta.status), latest \($meta.isLatest)"' \
+            listing.json | tee -a "$GITHUB_STEP_SUMMARY"
