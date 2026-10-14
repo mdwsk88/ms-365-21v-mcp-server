@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- Release automation publishes `server.json` to the official MCP Registry after each successful tagged release, using GitHub Actions OIDC. It skips versions that are already listed and can be run manually for an existing tag.
+- A documentation test keeps `server.json` and the Dockerfile ownership label in step with the package version.
+
 ## [0.2.0] - 2026-10-14
 
 Tool slimming: clients see a small set of high-frequency read tools, and everything else is reached through discovery. Also adds Host header validation for loopback deployments behind a reverse proxy. **Breaking:** default exposure mode and several tool outputs changed; see Migration.

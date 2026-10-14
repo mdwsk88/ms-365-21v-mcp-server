@@ -8,13 +8,14 @@ The public repository was initialized from a sanitized, history-free snapshot. K
 
 ## Versioned releases
 
-1. Create a release branch from the public repository's latest `main`. Update `package.json` and `package-lock.json` together when changing the version, add `docs/releases/vX.Y.Z.md`, and update the changelog and default tag in `docker-compose.release.yml`.
+1. Create a release branch from the public repository's latest `main`. Update `package.json` and `package-lock.json` together when changing the version, add `docs/releases/vX.Y.Z.md`, and update the changelog, the default tag in `docker-compose.release.yml`, and `server.json` (`version` and the image tag in `packages[].identifier`).
 2. Open a pull request. Require CI, the onboarding matrix and the Release container smoke job to pass, then merge it.
 3. Tag the merged commit with the matching `vX.Y.Z` version and push that tag. The Release workflow checks the tag against `package.json`, runs the test/audit/public-release gates, and verifies the container's protected HTTP endpoint and state persistence.
 4. After verification, the workflow publishes Linux amd64/arm64 images to GHCR with version and `latest` tags, SBOM/provenance metadata, then creates the GitHub Release with deployment assets and checksums. It publishes only from the public repository. It does not deploy to AWS/AgentRun or publish to npm.
-5. On first publication, change the new GHCR package's visibility to public in GitHub Package settings. Test an anonymous image pull and repeat the container smoke check against the published image. Record the release URL and image digest.
+5. When the Release workflow succeeds for the tag, the MCP Registry workflow publishes `server.json` to the official MCP Registry. It signs in with GitHub Actions OIDC, so no registry credential is stored. It checks that the tag still points at the released commit and that `server.json` matches the tag. It skips a version that is already listed and writes the listing to the run summary. The registry verifies ownership through the image's `io.modelcontextprotocol.server.name` label, so the GHCR package must allow anonymous pulls. If the registry was unavailable, run the MCP Registry workflow manually with the tag (Actions → MCP Registry → Run workflow). This does not rebuild images.
+6. On first publication, change the new GHCR package's visibility to public in GitHub Package settings. Test an anonymous image pull and repeat the container smoke check against the published image. Record the release URL and image digest.
 
-Keep version tags fixed once published. Use a new patch version for corrections. For a failed workflow, fix the cause before rerunning; `workflow_dispatch` on an existing version tag can resume publication. A dispatch on a branch only runs verification. Preserve existing deployment configuration and state during upgrades; see [container upgrade instructions](CONTAINER.md).
+Keep version tags fixed once published. Use a new patch version for corrections. For a failed workflow, fix the cause before rerunning; `workflow_dispatch` on an existing version tag can resume publication. A resumed run does not trigger the registry step, so run the MCP Registry workflow for the tag afterwards. A dispatch on a branch only runs verification. Preserve existing deployment configuration and state during upgrades; see [container upgrade instructions](CONTAINER.md).
 
 ## Repository boundary
 
