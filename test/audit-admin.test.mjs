@@ -90,6 +90,7 @@ test('tool runtime records denied calls in audit and Prometheus metrics', async 
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'mcp-runtime-audit-'));
   const config = {
     ...loadConfig(),
+    toolExposureMode: 'direct',
     transport: 'http',
     toolCategories: [],
     roleBasedFiltering: true,
@@ -125,6 +126,7 @@ test('no-input tools never audit MCP transport metadata as business parameters',
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'mcp-no-input-audit-'));
   const config = {
     ...loadConfig(),
+    toolExposureMode: 'direct',
     transport: 'http',
     roleBasedFiltering: false,
     auditLogEnabled: true,
@@ -159,6 +161,7 @@ test('no-input tools never audit MCP transport metadata as business parameters',
 test('admin REST API requires its static token and mounts under the public prefix', async (t) => {
   const config = {
     ...loadConfig(),
+    toolExposureMode: 'direct',
     transport: 'http',
     toolCategories: [],
     auditLogEnabled: false,
@@ -182,7 +185,7 @@ test('admin REST API requires its static token and mounts under the public prefi
   const toolsResponse = await fetch(`${baseUrl}/tools/MCP_21V/admin/tools`, { headers });
   assert.equal(toolsResponse.status, 200);
   const tools = await toolsResponse.json();
-  assert.equal(tools.tools.length, 150);
+  assert.equal(tools.tools.length, 151);
   const sendMail = tools.tools.find((tool) => tool.name === 'mail_send');
   assert.equal(sendMail.title, 'Send Mail');
   assert.match(sendMail.description, /Send an email as the signed-in user/);

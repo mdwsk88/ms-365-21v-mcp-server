@@ -3,21 +3,13 @@ import fs from 'node:fs';
 import { performance } from 'node:perf_hooks';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { loadConfig } from '../dist/config.js';
+import { defaultDirectTools, loadConfig } from '../dist/config.js';
 import { createGraphMcpServer } from '../dist/mcp-server.js';
 
 const example = fs.readFileSync(new URL('../.env.example', import.meta.url), 'utf8');
 const disabledGraphScopes =
   example.match(/^MCP_DISABLED_GRAPH_SCOPES=(.*)$/m)?.[1].split(',').filter(Boolean) ?? [];
-const directTools = [
-  'graph_get_me',
-  'mail_list_messages',
-  'mail_search_messages',
-  'calendar_list_events',
-  'drive_search_items',
-  'smart_mail_digest',
-  'smart_calendar_conflicts'
-];
+const directTools = defaultDirectTools;
 
 async function measure(mode, roles) {
   const config = {
@@ -28,7 +20,7 @@ async function measure(mode, roles) {
     auditLogEnabled: false,
     disabledGraphScopes,
     toolExposureMode: mode,
-    directToolCategories: ['smart'],
+    directToolCategories: [],
     directTools
   };
   const started = performance.now();

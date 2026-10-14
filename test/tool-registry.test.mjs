@@ -9,6 +9,7 @@ import { createToolRegistry } from '../dist/tools/index.js';
 function gatewayConfig(overrides = {}) {
   return {
     ...loadConfig(),
+    toolExposureMode: 'direct',
     transport: 'http',
     enableRawGraphGet: false,
     toolCategories: [],
@@ -26,7 +27,7 @@ function toolNames(server) {
 
 test('registry exposes the complete 21V tool catalog and records authorization metadata', () => {
   const registry = createToolRegistry(gatewayConfig());
-  assert.equal(registry.getAll().length, 150);
+  assert.equal(registry.getAll().length, 151);
   assert.deepEqual(registry.getAllCategories(), [
     'calendar',
     'contacts',
@@ -86,8 +87,8 @@ test('disabled Graph scopes remove dependent tools from both registry and MCP ca
   const server = createGraphMcpServer(config, { bypassRoleFiltering: true });
   const disabled = new Set(disabledGraphScopes.map(scope => scope.toLowerCase()));
 
-  assert.equal(registry.getAll().length, 125);
-  assert.equal(toolNames(server).length, 125);
+  assert.equal(registry.getAll().length, 126);
+  assert.equal(toolNames(server).length, 126);
   assert.equal(
     registry.getAll().filter(tool => tool.graphScopes.some(scope => disabled.has(scope.toLowerCase()))).length,
     0
@@ -108,7 +109,7 @@ test('disabled Graph scopes remove dependent tools from both registry and MCP ca
 test('category filtering keeps base auth tools and only selected business modules', () => {
   const config = gatewayConfig({ toolCategories: ['mail'], roleBasedFiltering: false });
   const server = createGraphMcpServer(config);
-  assert.equal(toolNames(server).length, 25);
+  assert.equal(toolNames(server).length, 24);
   assert.ok(toolNames(server).includes('auth_status'));
   assert.ok(toolNames(server).includes('mail_send'));
   assert.ok(!toolNames(server).includes('calendar_list_events'));
@@ -120,12 +121,12 @@ test('role filtering exposes no business tools without roles and module tools wi
   assert.deepEqual(toolNames(roleless).sort(), ['auth_status', 'confirm_execute']);
 
   const mailUser = createGraphMcpServer(config, { userRoles: ['mcp.mail'] });
-  assert.equal(toolNames(mailUser).length, 25);
+  assert.equal(toolNames(mailUser).length, 24);
   assert.ok(toolNames(mailUser).includes('mail_list_messages'));
   assert.ok(!toolNames(mailUser).includes('calendar_list_events'));
 
   const admin = createGraphMcpServer(config, { userRoles: ['mcp.admin'] });
-  assert.equal(toolNames(admin).length, 150);
+  assert.equal(toolNames(admin).length, 151);
 
   const smartUser = createGraphMcpServer(config, { userRoles: ['mcp.smart'] });
   assert.deepEqual(toolNames(smartUser).sort(), ['auth_status', 'confirm_execute']);

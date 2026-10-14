@@ -7,7 +7,6 @@ import {
   deleteEventAttachment,
   getSchedule,
   listCalendarEventInstances,
-  listCalendarView,
   listEventAttachments,
   updateCalendar
 } from '../graph-extended.js';
@@ -20,6 +19,7 @@ import {
   respondToCalendarEvent,
   updateCalendarEvent
 } from '../graph.js';
+import { listCalendarOverview, toUtcInstant } from '../graph-scenarios.js';
 import { attendeeSchema, eventDateTimeSchema } from './schemas.js';
 import { describeTool, runTool } from './results.js';
 import type { ToolModule } from './types.js';
@@ -70,18 +70,30 @@ export const calendarModule: ToolModule = {
       {
         title: 'List Calendar View',
         description: describeTool(
-          'List single and recurring event instances in an explicit date-time range. Requires delegated Calendars.Read.',
-          ['按时间范围查看日历', '查看指定日期的会议', '展开重复日程']
+          'List meetings and events, including recurring instances, in a date-time range: subject, time, location, organizer, my response, attendees and cancellation state. Requires delegated Calendars.Read.',
+          ['查看今天的会议', '按时间范围查看日历', '查看明天日程', '查看本周会议', '展开重复日程']
         ),
         inputSchema: {
-          startDateTime: z.string().min(1).max(80).describe('Range start in ISO 8601 format.'),
-          endDateTime: z.string().min(1).max(80).describe('Range end in ISO 8601 format.'),
-          top: z.number().int().min(1).max(100).optional().describe('Number of events to return.'),
-          timeZone: z.string().min(1).max(80).optional().describe('Response time zone. Defaults to China Standard Time.')
-        }
+          startDateTime: z
+            .string()
+            .min(1)
+            .max(80)
+            .describe('Range start, ISO 8601 date or date-time. Without an offset, China Standard Time is assumed.'),
+          endDateTime: z.string().min(1).max(80).describe('Range end, ISO 8601 date or date-time.'),
+          top: z.number().int().min(1).max(100).optional().describe('Maximum events to return. Defaults to 50.'),
+          timeZone: z.string().min(1).max(80).optional().describe('Time zone for returned times. Defaults to China Standard Time.')
+        },
+        annotations: { readOnlyHint: true, openWorldHint: true }
       },
       async ({ startDateTime, endDateTime, top, timeZone }) =>
-        runTool(async () => listCalendarView(config, startDateTime, endDateTime, top, timeZone))
+        runTool(async () =>
+          listCalendarOverview(config, {
+            startDateTime: toUtcInstant(startDateTime, 'startDateTime') ?? startDateTime,
+            endDateTime: toUtcInstant(endDateTime, 'endDateTime') ?? endDateTime,
+            top,
+            timeZone
+          })
+        )
     );
 
     server.registerTool(

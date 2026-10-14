@@ -12,6 +12,7 @@ import {
   registerDynamicTools
 } from './discovery.js';
 import { driveModule } from './drive.js';
+import { filesModule } from './files.js';
 import { groupsModule } from './groups.js';
 import { mailModule } from './mail.js';
 import { toolMetadata } from './metadata.js';
@@ -32,6 +33,7 @@ export const toolModules: ToolModule[] = [
   mailModule,
   calendarModule,
   driveModule,
+  filesModule,
   sharepointModule,
   teamsModule,
   contactsModule,

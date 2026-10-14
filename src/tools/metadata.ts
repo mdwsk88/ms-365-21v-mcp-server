@@ -28,7 +28,6 @@ export const toolMetadata: Record<string, ToolMetadata> = {
   mail_list_folders: read('Mail.Read'),
   mail_get_folder: read('Mail.Read'),
   mail_list_child_folders: read('Mail.Read'),
-  mail_list_folder_messages: read('Mail.Read'),
   mail_create_folder: write('create_mail_folder', 'Mail.ReadWrite'),
   mail_update_folder: write('update_mail_folder', 'Mail.ReadWrite'),
   mail_delete_folder: write('delete_mail_folder', 'Mail.ReadWrite'),
@@ -82,6 +81,8 @@ export const toolMetadata: Record<string, ToolMetadata> = {
   drive_list_permissions: read('Files.Read'),
   drive_list_versions: read('Files.Read'),
   drive_restore_version: write('restore_drive_version', 'Files.ReadWrite'),
+  files_search: read('Files.Read.All', 'Sites.Read.All'),
+  files_get_download_url: read('Files.Read.All'),
 
   sharepoint_search_sites: read('Sites.Read.All'),
   sharepoint_get_site: read('Sites.Read.All'),

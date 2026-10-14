@@ -1,9 +1,13 @@
+import { pruneGraphPayload } from '../text.js';
+
 type JsonObject = { [key: string]: unknown };
 
+/** Compact, metadata-free JSON keeps tool results small for the model context. */
 export function jsonResult(output: unknown) {
+  const pruned = pruneGraphPayload(output);
   return {
-    content: [{ type: 'text' as const, text: JSON.stringify(output, null, 2) }],
-    structuredContent: output as JsonObject
+    content: [{ type: 'text' as const, text: JSON.stringify(pruned) }],
+    structuredContent: pruned as JsonObject
   };
 }
 
@@ -31,17 +35,17 @@ export async function runTool(handler: () => Promise<unknown>) {
   } catch (error) {
     const output = { error: formatError(error) };
     return {
-      content: [{ type: 'text' as const, text: JSON.stringify(output, null, 2) }],
+      content: [{ type: 'text' as const, text: JSON.stringify(output) }],
       structuredContent: output,
       isError: true
     };
   }
 }
 
-export function errorResult(code: string, message: string) {
-  const output = { error: { code, message } };
+export function errorResult(code: string, message: string, details?: JsonObject) {
+  const output = { error: { code, message, ...details } };
   return {
-    content: [{ type: 'text' as const, text: JSON.stringify(output, null, 2) }],
+    content: [{ type: 'text' as const, text: JSON.stringify(output) }],
     structuredContent: output,
     isError: true
   };

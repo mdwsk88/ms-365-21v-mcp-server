@@ -38,6 +38,7 @@ async function connect(server, elicitationHandler, capabilities = { elicitation:
 function testServer(confirmOperations = ['delete_test_item']) {
   const config = {
     ...loadConfig(),
+    toolExposureMode: 'direct',
     transport: 'http',
     inboundAuthDisabled: true,
     roleBasedFiltering: false,
@@ -75,6 +76,7 @@ test('mail send displays a readable client-native preview and decline performs n
   t.after(() => browserConfirmationStore.clear());
   const config = {
     ...loadConfig(),
+    toolExposureMode: 'direct',
     transport: 'http',
     inboundAuthDisabled: true,
     roleBasedFiltering: false,
@@ -307,6 +309,7 @@ test('all confirmation policy gates every confirmable write operation', async (t
 test('automatic mode sends immediately but still gates destructive writes', async (t) => {
   const config = {
     ...loadConfig(),
+    toolExposureMode: 'direct',
     transport: 'http',
     inboundAuthDisabled: true,
     roleBasedFiltering: false,
@@ -416,6 +419,7 @@ test('web approval does not bypass a role revoked before execution', async () =>
   browserConfirmationStore.clear();
   const config = {
     ...loadConfig(),
+    toolExposureMode: 'direct',
     transport: 'http',
     inboundAuthDisabled: false,
     roleBasedFiltering: true,

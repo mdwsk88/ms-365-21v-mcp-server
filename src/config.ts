@@ -16,6 +16,22 @@ export type OAuthBridgeMicrosoftClientType = 'public' | 'confidential_web';
 export type SendMode = 'confirm' | 'automatic';
 export type ToolExposureMode = 'direct' | 'discovery' | 'hybrid';
 
+/**
+ * Read-only tools listed directly in hybrid mode when MCP_DIRECT_TOOLS is unset:
+ * the high-frequency Teams chat, mail, calendar and document scenarios.
+ * Everything else stays reachable through gateway_search_tools and gateway_execute_tool.
+ */
+export const defaultDirectTools = [
+  'teams_list_chats',
+  'teams_list_chat_messages',
+  'mail_list_messages',
+  'mail_search_messages',
+  'mail_get_message',
+  'calendar_list_view',
+  'files_search',
+  'files_get_download_url'
+];
+
 export type AppConfig = {
   tenantId?: string;
   clientId?: string;
@@ -241,8 +257,8 @@ function parseSendMode(): SendMode {
 
 function parseToolExposureMode(): ToolExposureMode {
   const value = optionalEnv('MCP_TOOL_EXPOSURE_MODE')?.toLowerCase();
-  if (!value || value === 'direct') return 'direct';
-  if (value === 'discovery' || value === 'hybrid') return value;
+  if (!value || value === 'hybrid') return 'hybrid';
+  if (value === 'direct' || value === 'discovery') return value;
   throw new ConfigError('MCP_TOOL_EXPOSURE_MODE must be direct, discovery, or hybrid.');
 }
 
@@ -336,9 +352,13 @@ export function loadConfig(): AppConfig {
   const directToolCategories = [
     ...new Set(parseList(optionalEnv('MCP_DIRECT_TOOL_CATEGORIES')).map(value => value.toLowerCase()))
   ];
-  const directTools = [
-    ...new Set(parseList(optionalEnv('MCP_DIRECT_TOOLS')).map(value => value.toLowerCase()))
-  ];
+  const directToolsValue = optionalEnv('MCP_DIRECT_TOOLS');
+  const directTools =
+    directToolsValue === undefined
+      ? [...defaultDirectTools]
+      : directToolsValue.toLowerCase() === 'none'
+        ? []
+        : [...new Set(parseList(directToolsValue).map(value => value.toLowerCase()))];
   const disabledGraphScopes = [
     ...new Set(parseList(optionalEnv('MCP_DISABLED_GRAPH_SCOPES')).map(scopeName))
   ];

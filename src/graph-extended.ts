@@ -154,23 +154,6 @@ export async function checkMyGroupMemberships(config: AppConfig, groupIds: strin
 
 // Outlook mail additions
 
-export async function listFolderMessages(
-  config: AppConfig,
-  folderId: string,
-  top?: number,
-  unreadOnly?: boolean
-): Promise<unknown> {
-  return graphRequest(config, 'GET', `/me/mailFolders/${segment(folderId)}/messages`, {
-    query: {
-      $top: clampTop(top, 20, 50),
-      $select: 'id,subject,from,toRecipients,receivedDateTime,webLink,isRead,importance,hasAttachments',
-      $orderby: 'receivedDateTime desc',
-      $filter: unreadOnly ? 'isRead eq false' : undefined
-    },
-    scopes: ['Mail.Read']
-  });
-}
-
 export async function getMailFolder(config: AppConfig, folderId: string): Promise<unknown> {
   return graphRequest(config, 'GET', `/me/mailFolders/${segment(folderId)}`, {
     query: { $select: 'id,displayName,parentFolderId,childFolderCount,totalItemCount,unreadItemCount,isHidden' },
@@ -277,26 +260,6 @@ export async function deleteMessageAttachment(
 }
 
 // Calendar additions
-
-export async function listCalendarView(
-  config: AppConfig,
-  start: string,
-  end: string,
-  top?: number,
-  timeZone = 'China Standard Time'
-): Promise<unknown> {
-  return graphRequest(config, 'GET', '/me/calendarView', {
-    query: {
-      startDateTime: start,
-      endDateTime: end,
-      $top: clampTop(top, 25, 100),
-      $select: 'id,subject,organizer,attendees,start,end,location,webLink,isOnlineMeeting,responseStatus,seriesMasterId',
-      $orderby: 'start/dateTime'
-    },
-    prefer: `outlook.timezone="${timeZone.replace(/"/g, '')}"`,
-    scopes: ['Calendars.Read']
-  });
-}
 
 export async function listCalendarEventInstances(
   config: AppConfig,

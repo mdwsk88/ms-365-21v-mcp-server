@@ -2,7 +2,7 @@
 
 面向 Microsoft 365 operated by 21Vianet（世纪互联）的远程 MCP 服务。它通过标准 Streamable HTTP 和 OAuth 2.1，让支持 MCP 的 AI 客户端以当前登录用户的身份访问 Microsoft Graph 中国区。
 
-项目目前实现 150 个工具，覆盖邮件、日历、OneDrive、SharePoint、Teams、联系人、组织用户、Microsoft Search 和智能聚合。所有业务调用都使用 Delegated permissions，不使用后台应用身份冒充用户。
+项目目前实现 154 个工具（含 3 个动态发现工具），覆盖邮件、日历、OneDrive、SharePoint、Teams、联系人、组织用户、Microsoft Search 和智能聚合。所有业务调用都使用 Delegated permissions，不使用后台应用身份冒充用户。
 
 > 本项目不是 Microsoft 或 21Vianet 官方产品。生产使用前，请由租户管理员和安全团队审核 Entra 权限、Conditional Access、用户分配和数据合规要求。
 
@@ -327,11 +327,27 @@ npm run dev:http
 
 | 模式 | 客户端看到的工具 | 适用场景 |
 |---|---|---|
-| `direct` | 当前用户获准的全部工具 | 工具数量可控、追求最低调用延迟 |
-| `discovery` | 基础工具和动态发现工具 | 希望显著减少初始 Schema |
-| `hybrid` | 常用工具直达，长尾工具动态发现 | 推荐，兼顾中文命中速度和上下文大小 |
+| `hybrid`（默认） | 高频只读工具直达，其余工具动态发现 | 推荐，管理员也只看到约 13 个工具 |
+| `direct` | 当前用户获准的全部工具 | 只开放少数模块、追求最少调用轮次 |
+| `discovery` | 基础工具和动态发现工具 | 希望工具清单最小 |
 
-`hybrid` 模式下，动态调用仍会重新进入统一权限、确认和审计链路，不能绕过安全策略。配置与基准见 [工具暴露基准](docs/TOOL_EXPOSURE_BENCHMARK.md)。
+`hybrid` 默认直达的业务工具（`MCP_DIRECT_TOOLS` 未设置时）：
+
+| 场景 | 工具 |
+|---|---|
+| Teams 聊天 | `teams_list_chats`、`teams_list_chat_messages` |
+| 邮件 | `mail_list_messages`、`mail_search_messages`、`mail_get_message` |
+| 日历 | `calendar_list_view` |
+| 文档 | `files_search`、`files_get_download_url` |
+
+另外始终提供 `auth_status`、`confirm_execute`（启用确认时）和三个发现工具 `gateway_search_tools`、`gateway_get_tool_schema`、`gateway_execute_tool`。
+
+- 没有直达的工具不能按名字直接调用，客户端要通过 `gateway_execute_tool` 执行。从 `direct` 切换过来时，按名字写死工具的客户端或技能需要同步调整。
+- 动态调用仍会重新进入统一的 App Role、写操作确认和审计链路，不能绕过安全策略。
+- App Roles 决定“谁能用哪类数据”，暴露模式决定“模型每次看到多少工具”。用户直接看到的是直达集合中他有权限的部分，能搜索和执行的是他有权限的全部工具。
+- 直达集合用 `MCP_DIRECT_TOOLS` 和 `MCP_DIRECT_TOOL_CATEGORIES` 调整，设为 `none` 表示不直达任何业务工具。
+
+配置与基准见 [工具暴露基准](docs/TOOL_EXPOSURE_BENCHMARK.md)。
 
 ## 写操作确认
 
