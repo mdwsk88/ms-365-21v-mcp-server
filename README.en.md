@@ -40,7 +40,7 @@ docker compose -f docker-compose.release.yml pull
 docker compose -f docker-compose.release.yml up -d
 ```
 
-The default image is `ghcr.io/mdwsk88/ms-365-21v-mcp-server:v0.1.1`, for Linux amd64/arm64. With an older Compose file, set `MCP_IMAGE_TAG=v0.1.1` in `.env` before running the commands above; an existing override takes precedence over the default. See [container setup and rollback](docs/CONTAINER.md) and [Releases](https://github.com/mdwsk88/ms-365-21v-mcp-server/releases) for deployment files and changes. The Compose file binds to localhost and persists state in a named volume; remote clients need an HTTPS reverse proxy.
+The default image is `ghcr.io/mdwsk88/ms-365-21v-mcp-server:v0.2.0`, for Linux amd64/arm64. With an older Compose file, set `MCP_IMAGE_TAG=v0.2.0` in `.env` before running the commands above; an existing override takes precedence over the default. See [container setup and rollback](docs/CONTAINER.md) and [Releases](https://github.com/mdwsk88/ms-365-21v-mcp-server/releases) for deployment files and changes. The Compose file binds to localhost and persists state in a named volume; remote clients need an HTTPS reverse proxy.
 
 ## Examples after enabling the relevant modules
 

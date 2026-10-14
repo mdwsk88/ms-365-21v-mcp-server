@@ -589,3 +589,85 @@ test('discovery search returns schemas for top hits and invalid arguments return
   assert.equal(invalid.structuredContent.error.code, 'invalid_tool_arguments');
   assert.equal(invalid.structuredContent.error.inputSchema.type, 'object');
 });
+
+const oneDriveItem = {
+  ...driveItem,
+  id: 'item-2',
+  name: 'Notes.docx',
+  webUrl: 'https://tenant-my.sharepoint.cn/personal/me/Documents/Notes.docx',
+  parentReference: { driveId: 'drive-me', driveType: 'business' },
+  '@microsoft.graph.downloadUrl': 'https://tenant-my.sharepoint.cn/download?token=short'
+};
+
+test('without mcp.sharepoint, file tools keep to OneDrive and refuse SharePoint files', async (t) => {
+  const config = await graphTestConfig(t);
+  const search = await withMockFetch(
+    () => json({ value: [{ hitsContainers: [{ hits: [{ resource: driveItem }, { resource: oneDriveItem }] }] }] }),
+    () => searchFiles(config, { query: 'plan', top: 5, includeSharePoint: false })
+  );
+  assert.equal(JSON.parse(search.requests[0].init.body).requests[0].size, 50);
+  assert.deepEqual(search.result.files.map(file => file.location), ['OneDrive']);
+  assert.match(search.result.notes.join(' '), /mcp\.sharepoint/);
+
+  const isPermissionDenied = error => error.code === 'permission_denied' && /mcp\.sharepoint/.test(error.message);
+  await assert.rejects(
+    () => searchFiles(config, { query: 'plan', site: 'https://tenant.sharepoint.cn/sites/Project', includeSharePoint: false }),
+    isPermissionDenied
+  );
+  await assert.rejects(() => searchFiles(config, { query: 'plan', scope: 'sharepoint', includeSharePoint: false }), isPermissionDenied);
+
+  await assert.rejects(
+    () =>
+      withMockFetch(
+        () => json({ ...driveItem, parentReference: { driveId: 'drive-1', driveType: 'documentLibrary' } }),
+        () => getFileDownloadUrl(config, { driveId: 'drive-1', itemId: 'item-1', includeSharePoint: false })
+      ),
+    isPermissionDenied
+  );
+  await assert.rejects(
+    () => withMockFetch(() => json(driveItem), () => getFileDownloadUrl(config, { url: 'https://tenant.sharepoint.cn/:w:/s/Project/abc', includeSharePoint: false })),
+    isPermissionDenied
+  );
+  const own = await withMockFetch(
+    () => json(oneDriveItem),
+    () => getFileDownloadUrl(config, { itemId: 'item-2', includeSharePoint: false })
+  );
+  assert.equal(own.result.location, 'OneDrive');
+  assert.equal(own.result.downloadUrl, oneDriveItem['@microsoft.graph.downloadUrl']);
+});
+
+test('file tools read mcp.sharepoint from the caller App Roles', async (t) => {
+  const config = await graphTestConfig(t);
+  const server = createGraphMcpServer(
+    {
+      ...config,
+      transport: 'http',
+      inboundAuthDisabled: false,
+      roleBasedFiltering: true,
+      disabledGraphScopes: [],
+      toolExposureMode: 'hybrid',
+      directTools: ['files_search'],
+      directToolCategories: []
+    },
+    { userRoles: ['mcp.drive'] }
+  );
+  const searchAs = async roles => {
+    const original = globalThis.fetch;
+    globalThis.fetch = async () =>
+      json({ value: [{ hitsContainers: [{ hits: [{ resource: driveItem }, { resource: oneDriveItem }] }] }] });
+    try {
+      return await runWithRequestContext({ requestId: 'file-roles', inboundClaims: { ...me, roles } }, () =>
+        server._registeredTools.files_search.handler({ query: 'plan' }, {})
+      );
+    } finally {
+      globalThis.fetch = original;
+    }
+  };
+  const locations = result => result.structuredContent.files.map(file => file.location);
+  assert.deepEqual(locations(await searchAs(['mcp.drive'])), ['OneDrive']);
+  assert.deepEqual(locations(await searchAs(['mcp.drive', 'mcp.sharepoint'])), ['SharePoint: Project', 'OneDrive']);
+  assert.deepEqual(locations(await searchAs(['mcp.admin'])), ['SharePoint: Project', 'OneDrive']);
+  const denied = await searchAs(['mcp.sharepoint']);
+  assert.equal(denied.isError, true);
+  assert.equal(denied.structuredContent.error.code, 'permission_denied');
+});

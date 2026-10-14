@@ -1,14 +1,16 @@
 # Changelog
 
-## [Unreleased] - planned 0.2.0
+## [0.2.0] - 2026-10-14
 
-Tool slimming: clients see a small set of high-frequency read tools, and everything else is reached through discovery. **Breaking:** default exposure mode and several tool outputs changed; see Migration.
+Tool slimming: clients see a small set of high-frequency read tools, and everything else is reached through discovery. Also adds Host header validation for loopback deployments behind a reverse proxy. **Breaking:** default exposure mode and several tool outputs changed; see Migration.
 
 ### Added
 
 - `files_search`: search documents across OneDrive and SharePoint with Microsoft Search, filtered by site, file type and modification date. Falls back to per-library search when Microsoft Search is unavailable.
 - `files_get_download_url`: resolve a OneDrive or SharePoint sharing link or item ID and return a short-lived pre-authenticated download URL for the agent client to fetch and parse; optional Office-to-PDF conversion; small plain-text files are returned inline.
 - `gateway_search_tools` returns the input schema for its top results (`schemaCount`, default 3), so most long-tail calls need only search then execute. Invalid `gateway_execute_tool` arguments return the expected schema.
+- `MCP_ALLOWED_HOSTS` and a Host header allow-list against DNS rebinding. A loopback bind now accepts `localhost`, `127.0.0.1`, `[::1]` and the configured public host names (resource URL, public base URL, OAuth issuer), so a same-host reverse proxy that forwards the public `Host` header works with `MCP_HTTP_HOST=127.0.0.1`. Previously the MCP SDK accepted only localhost names on a loopback bind, which forced such deployments onto `0.0.0.0`. `MCP_ALLOWED_HOSTS` adds names and also enables the check for other binds; an all-interfaces bind without it is unchanged.
+- `/healthz` reports the server `version`.
 
 ### Changed
 
@@ -22,6 +24,7 @@ Tool slimming: clients see a small set of high-frequency read tools, and everyth
 - Discovery ranking uses BM25 over tool name, title, category and description with bilingual synonyms.
 - All tool results are compact JSON without Graph `@odata.context`/`@odata.etag` metadata or null values.
 - Server instructions tell clients that mail, chat and file text is untrusted data and that download URLs must not be shared.
+- `files_search` and `files_get_download_url` need `mcp.drive`; SharePoint files additionally need `mcp.sharepoint`, so the new tools keep the existing OneDrive/SharePoint App Role boundary. A caller without `mcp.sharepoint` gets OneDrive results only and a `permission_denied` error for SharePoint sites and files.
 
 ### Removed
 
@@ -34,8 +37,9 @@ Tool slimming: clients see a small set of high-frequency read tools, and everyth
 
 ### Verification
 
-- 97 automated tests with mocked Microsoft Graph. Read-only probes in a 21V tenant on 2026-10-12 confirmed chat `$expand=members,lastMessagePreview` with `$orderby=lastMessagePreview/createdDateTime desc`, chat message filters on `lastModifiedDateTime` (gt/lt) and `createdDateTime` (lt only), and combined mail filters led by `receivedDateTime`.
+- 102 automated tests with mocked Microsoft Graph, including a spawned loopback server that accepts the public Host header and answers 403 to others. Read-only probes in a 21V tenant on 2026-10-12 confirmed chat `$expand=members,lastMessagePreview` with `$orderby=lastMessagePreview/createdDateTime desc`, chat message filters on `lastModifiedDateTime` (gt/lt) and `createdDateTime` (lt only), and combined mail filters led by `receivedDateTime`.
 - Not yet verified in a 21V tenant: Microsoft Search for `driveItem`, the `/shares` link API and `format=pdf` conversion.
+- No Microsoft Entra changes are required: no new App Roles, delegated Graph permissions or redirect URIs.
 
 ## [0.1.0] - 2026-09-07
 
@@ -63,4 +67,5 @@ First versioned release, including the onboarding and security updates merged on
 - No new runtime dependencies, npm publication, production cloud deployment or authentication-policy relaxation.
 - Live 21V consent, Conditional Access and client interoperability must be validated in the target tenant. Offline preflight is not a substitute.
 
+[0.2.0]: https://github.com/mdwsk88/ms-365-21v-mcp-server/releases/tag/v0.2.0
 [0.1.0]: https://github.com/mdwsk88/ms-365-21v-mcp-server/releases/tag/v0.1.0

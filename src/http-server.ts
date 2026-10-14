@@ -3,11 +3,11 @@ import { createMcpExpressApp } from '@modelcontextprotocol/sdk/server/express.js
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import type { AppConfig } from './config.js';
-import { requireRemoteConfigured } from './config.js';
+import { hostHeaderAllowList, requireRemoteConfigured } from './config.js';
 import { mountAdminRoutes } from './admin-routes.js';
 import { mountConfirmationRoutes } from './confirmation-routes.js';
 import { authenticateInboundRequest, InboundAuthError, type InboundAuthResult } from './inbound-auth.js';
-import { createGraphMcpServer } from './mcp-server.js';
+import { createGraphMcpServer, serverVersion } from './mcp-server.js';
 import { mountedRoutePaths } from './http-routes.js';
 import { mountOAuthBridgeRoutes } from './oauth-bridge.js';
 import {
@@ -111,7 +111,11 @@ export async function startHttpServer(config: AppConfig): Promise<void> {
     requireRemoteConfigured(config);
   }
 
-  const app = createMcpExpressApp({ host: config.httpHost });
+  const allowedHosts = hostHeaderAllowList(config);
+  const app = createMcpExpressApp({ host: config.httpHost, allowedHosts });
+  if (allowedHosts) {
+    console.error(`Accepted Host headers: ${allowedHosts.join(', ')}`);
+  }
   const sessions = new Map<string, McpHttpSession>();
   const closingTransports = new WeakSet<StreamableHTTPServerTransport>();
 
@@ -122,6 +126,7 @@ export async function startHttpServer(config: AppConfig): Promise<void> {
       res.json({
         ok: true,
         name: 'ms-365-21v-mcp-server',
+        version: serverVersion,
         mode: 'http',
         auth: config.inboundAuthDisabled ? 'disabled' : 'bearer-jwt-obo',
         graphBaseUrl: config.graphBaseUrl,

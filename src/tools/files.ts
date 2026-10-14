@@ -1,6 +1,7 @@
 import { z } from 'zod/v4';
 import { getFileDownloadUrl, searchFiles } from '../graph-scenarios.js';
 import { describeTool, runTool } from './results.js';
+import { callerHasRoles } from './runtime.js';
 import type { ToolModule } from './types.js';
 
 export const filesModule: ToolModule = {
@@ -15,7 +16,7 @@ export const filesModule: ToolModule = {
       {
         title: 'Search Files',
         description: describeTool(
-          'Find documents across OneDrive and SharePoint sites the signed-in user can open, by keywords in name or content. Filter by site, file type and modification date. Returns location, last editor, webUrl, driveId and itemId for files_get_download_url.',
+          'Find documents across OneDrive and SharePoint sites the signed-in user can open, by keywords in name or content. Filter by site, file type and modification date. Returns location, last editor, webUrl, driveId and itemId for files_get_download_url. SharePoint results also require the mcp.sharepoint App Role.',
           ['搜索文档', '查找SharePoint文件', '查找OneDrive文件', '找某个项目的Word或PDF', '搜索网盘文件']
         ),
         inputSchema: {
@@ -37,7 +38,10 @@ export const filesModule: ToolModule = {
         },
         annotations: { readOnlyHint: true, openWorldHint: true }
       },
-      async input => runTool(async () => searchFiles(config, input))
+      async input =>
+        runTool(async () =>
+          searchFiles(config, { ...input, includeSharePoint: callerHasRoles(config, ['mcp.sharepoint']) })
+        )
     );
 
     server.registerTool(
@@ -45,7 +49,7 @@ export const filesModule: ToolModule = {
       {
         title: 'Get File Download URL',
         description: describeTool(
-          'Resolve a OneDrive or SharePoint file from a link pasted in chat or mail, or from driveId and itemId, and return a short-lived pre-authenticated download URL for the client to fetch and parse. format pdf converts Office files to PDF first. Small plain-text files also return their text inline.',
+          'Resolve a OneDrive or SharePoint file from a link pasted in chat or mail, or from driveId and itemId, and return a short-lived pre-authenticated download URL for the client to fetch and parse. format pdf converts Office files to PDF first. Small plain-text files also return their text inline. SharePoint files also require the mcp.sharepoint App Role.',
           ['打开SharePoint链接', '读取文档内容', '下载文件', '获取文件下载地址', '把Word转成PDF']
         ),
         inputSchema: {
@@ -69,7 +73,7 @@ export const filesModule: ToolModule = {
       async input =>
         runTool(async () => {
           if (!input.url && !input.itemId) throw new Error('Provide url, or itemId with optional driveId.');
-          return getFileDownloadUrl(config, input);
+          return getFileDownloadUrl(config, { ...input, includeSharePoint: callerHasRoles(config, ['mcp.sharepoint']) });
         })
     );
   }

@@ -37,11 +37,19 @@ export function rolesFromClaims(claims: JWTPayload | undefined): string[] {
   return [];
 }
 
-export function hasToolRole(config: AppConfig, entry: ToolRegistryEntry, roles: string[]): boolean {
+function rolesSatisfy(config: AppConfig, requiredRoles: string[], roles: string[]): boolean {
   if (!config.roleBasedFiltering || config.inboundAuthDisabled || config.transport === 'stdio') return true;
-  const requiredRoles = entry.requiredRoles ?? (entry.requiredRole ? [entry.requiredRole] : []);
   if (requiredRoles.length === 0) return true;
   return roles.includes('mcp.admin') || requiredRoles.every(role => roles.includes(role));
+}
+
+export function hasToolRole(config: AppConfig, entry: ToolRegistryEntry, roles: string[]): boolean {
+  return rolesSatisfy(config, entry.requiredRoles ?? (entry.requiredRole ? [entry.requiredRole] : []), roles);
+}
+
+/** Whether the caller of the current request holds every listed App Role, under the tool-filtering rules. */
+export function callerHasRoles(config: AppConfig, requiredRoles: string[]): boolean {
+  return rolesSatisfy(config, requiredRoles, rolesFromClaims(getRequestContext()?.inboundClaims));
 }
 
 export class ToolRuntime {

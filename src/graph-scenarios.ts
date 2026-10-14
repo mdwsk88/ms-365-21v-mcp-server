@@ -609,6 +609,23 @@ function locationOf(webUrl: string | undefined): string | undefined {
   }
 }
 
+/** Raised when the caller's App Roles do not cover the requested data; reported as permission_denied. */
+export class ScenarioPermissionError extends Error {
+  readonly code = 'permission_denied';
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'PermissionDeniedError';
+  }
+}
+
+/** SharePoint libraries report driveType documentLibrary; OneDrive for Business reports business. */
+function isSharePointItem(item: JsonRecord): boolean {
+  const driveType = text(record(item.parentReference).driveType);
+  if (driveType) return driveType === 'documentLibrary';
+  return locationOf(text(item.webUrl)) !== 'OneDrive';
+}
+
 export function shapeFileItem(item: JsonRecord, summary?: string) {
   const parent = record(item.parentReference);
   const lastModifiedBy = record(record(item.lastModifiedBy).user);
@@ -682,13 +699,25 @@ export async function searchFiles(
     fileTypes?: string[];
     modifiedAfter?: string;
     top?: number;
+    /** False when the caller lacks the mcp.sharepoint App Role: OneDrive results only. */
+    includeSharePoint?: boolean;
   }
 ) {
   const top = clamp(input.top, 20, 1, 50);
+  const includeSharePoint = input.includeSharePoint !== false;
+  if (!includeSharePoint && (input.site || input.scope === 'sharepoint')) {
+    throw new ScenarioPermissionError(
+      'Searching SharePoint requires the mcp.sharepoint App Role. Use scope onedrive, or ask an administrator to assign the role.'
+    );
+  }
+  const scope = includeSharePoint ? input.scope : 'onedrive';
   const modifiedAfter = toUtcInstant(input.modifiedAfter, 'modifiedAfter');
   const site = input.site ? await resolveSite(config, input.site) : undefined;
-  const filters = { scope: input.scope, fileTypes: input.fileTypes, modifiedAfter };
+  const filters = { scope, fileTypes: input.fileTypes, modifiedAfter };
   const notes: string[] = [];
+  if (!includeSharePoint && input.scope !== 'onedrive') {
+    notes.push('SharePoint files are excluded because the signed-in user does not have the mcp.sharepoint App Role.');
+  }
 
   try {
     const response = await graphRequest(config, 'POST', '/search/query', {
@@ -700,7 +729,8 @@ export async function searchFiles(
               queryString: fileSearchKql({ query: input.query, fileTypes: input.fileTypes, modifiedAfter, siteUrl: site?.webUrl })
             },
             from: 0,
-            size: Math.min(50, top * 2)
+            // A one-sided scope is filtered locally, so fetch the most hits to keep enough after filtering.
+            size: scope === 'onedrive' || scope === 'sharepoint' ? 50 : Math.min(50, top * 2)
           }
         ]
       },
@@ -711,7 +741,13 @@ export async function searchFiles(
       .map(hit => shapeFileItem(record(hit.resource), text(hit.summary)))
       .filter(item => matchesFileFilters(item, filters))
       .slice(0, top);
-    return { engine: 'microsoft_search', query: input.query, count: files.length, files };
+    return {
+      engine: 'microsoft_search',
+      query: input.query,
+      count: files.length,
+      files,
+      notes: notes.length ? notes : undefined
+    };
   } catch (error) {
     if (!(error instanceof GraphHttpError) || ![400, 403, 404, 405, 501].includes(error.status)) throw error;
     notes.push(`Microsoft Search is unavailable here (HTTP ${error.status}); used per-library search instead.`);
@@ -737,7 +773,7 @@ export async function searchFiles(
       );
     }
   } else {
-    if (input.scope !== 'sharepoint') {
+    if (scope !== 'sharepoint') {
       searches.push(
         graphRequest(config, 'GET', `/me/drive/root/search(q='${escaped}')`, {
           query: { $top: top, $select: driveItemSelect },
@@ -745,7 +781,7 @@ export async function searchFiles(
         })
       );
     }
-    if (input.scope !== 'onedrive') {
+    if (scope !== 'onedrive') {
       notes.push('Without Microsoft Search, SharePoint libraries are searched only when site is provided.');
     }
   }
@@ -814,9 +850,16 @@ export async function getFileDownloadUrl(
     format?: 'original' | 'pdf';
     includeText?: boolean;
     maxTextChars?: number;
+    /** False when the caller lacks the mcp.sharepoint App Role: SharePoint files are refused. */
+    includeSharePoint?: boolean;
   }
 ) {
   const item = await resolveDriveItem(config, input);
+  if (input.includeSharePoint === false && isSharePointItem(item)) {
+    throw new ScenarioPermissionError(
+      'This file is stored in SharePoint. Reading SharePoint files requires the mcp.sharepoint App Role; ask an administrator to assign it.'
+    );
+  }
   const shaped = shapeFileItem(item);
   if (shaped.isFolder) {
     throw new Error(`"${shaped.name ?? 'This item'}" is a folder. Use files_search or list the folder through gateway_search_tools.`);

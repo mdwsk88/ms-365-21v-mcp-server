@@ -5,6 +5,7 @@ import { registerTools } from './tools/index.js';
 import type { ToolAccessContext } from './tools/types.js';
 
 const packageJson = createRequire(import.meta.url)('../package.json') as { version: string };
+export const serverVersion = packageJson.version;
 
 export function createGraphMcpServer(config: AppConfig, access: ToolAccessContext = {}): McpServer {
   const dynamicInstructions =
@@ -16,7 +17,7 @@ export function createGraphMcpServer(config: AppConfig, access: ToolAccessContex
   const server = new McpServer(
     {
       name: 'ms-365-21v-mcp-server',
-      version: packageJson.version
+      version: serverVersion
     },
     {
       instructions:
