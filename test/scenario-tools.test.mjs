@@ -671,3 +671,26 @@ test('file tools read mcp.sharepoint from the caller App Roles', async (t) => {
   assert.equal(denied.isError, true);
   assert.equal(denied.structuredContent.error.code, 'permission_denied');
 });
+
+test('opening a file by link needs Files.ReadWrite, and large PDF conversions fall back to the original', async (t) => {
+  const config = await graphTestConfig(t);
+  const withoutWrite = { ...config, disabledGraphScopes: ['Files.ReadWrite'] };
+  await assert.rejects(
+    () => getFileDownloadUrl(withoutWrite, { url: 'https://tenant.sharepoint.cn/:w:/s/Project/abc' }),
+    error => error.code === 'scope_not_enabled' && /Files\.ReadWrite/.test(error.message)
+  );
+  const byId = await withMockFetch(
+    () => json(driveItem),
+    () => getFileDownloadUrl(withoutWrite, { driveId: 'drive-1', itemId: 'item-1' })
+  );
+  assert.equal(byId.result.downloadUrl, driveItem['@microsoft.graph.downloadUrl']);
+
+  const large = await withMockFetch(
+    () => json({ ...driveItem, size: 3 * 1024 * 1024 }),
+    () => getFileDownloadUrl(config, { driveId: 'drive-1', itemId: 'item-1', format: 'pdf' })
+  );
+  assert.equal(large.requests.length, 1);
+  assert.equal(large.result.format, 'original');
+  assert.equal(large.result.downloadUrl, driveItem['@microsoft.graph.downloadUrl']);
+  assert.match(large.result.notes.join(' '), /2 MB/);
+});

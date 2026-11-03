@@ -1,6 +1,7 @@
 import type { AppConfig } from './config.js';
 import { getGraphResilience } from './graph-resilience.js';
 import { getGraphAccessToken } from './oauth.js';
+import { requestableGraphScope } from './scope-policy.js';
 
 export class GraphHttpError extends Error {
   readonly status: number;
@@ -78,9 +79,15 @@ function resolveGraphUrl(config: AppConfig, pathOrUrl: string, query?: Record<st
 }
 
 function graphScopes(config: AppConfig, scopeNames: string[]): string[] {
-  return scopeNames.map(scope =>
-    scope.startsWith('https://') || scope.startsWith('api://') ? scope : `${config.graphResource}/${scope}`
-  );
+  return scopeNames.map(scopeName => {
+    const scope = requestableGraphScope(config, scopeName);
+    return scope.startsWith('https://') || scope.startsWith('api://') ? scope : `${config.graphResource}/${scope}`;
+  });
+}
+
+/** A Microsoft Graph access token for the signed-in user (OBO in HTTP mode) carrying the given scopes. */
+export async function graphAccessTokenForScopes(config: AppConfig, scopeNames: string[]): Promise<string> {
+  return getGraphAccessToken(config, graphScopes(config, scopeNames));
 }
 
 export async function graphRequest(

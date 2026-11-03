@@ -87,8 +87,8 @@ test('disabled Graph scopes remove dependent tools from both registry and MCP ca
   const server = createGraphMcpServer(config, { bypassRoleFiltering: true });
   const disabled = new Set(disabledGraphScopes.map(scope => scope.toLowerCase()));
 
-  assert.equal(registry.getAll().length, 126);
-  assert.equal(toolNames(server).length, 126);
+  assert.equal(registry.getAll().length, 128);
+  assert.equal(toolNames(server).length, 128);
   assert.equal(
     registry.getAll().filter(tool => tool.graphScopes.some(scope => disabled.has(scope.toLowerCase()))).length,
     0
@@ -100,6 +100,9 @@ test('disabled Graph scopes remove dependent tools from both registry and MCP ca
   assert.equal(server._registeredTools.teams_send_channel_message, undefined);
 
   assert.ok(registry.getByName('users_search'));
+  // Least-privileged permissions are already granted for these two, so withholding User.Read.All keeps them.
+  assert.deepEqual(registry.getByName('users_list_direct_reports')?.graphScopes, ['User.Read', 'User.ReadBasic.All']);
+  assert.deepEqual(registry.getByName('users_list_memberships')?.optionalGraphScopes, ['User.Read.All']);
   assert.ok(registry.getByName('groups_check_my_memberships'));
   assert.ok(registry.getByName('teams_send_chat_message'));
   assert.ok(registry.getByName('smart_mail_digest'));

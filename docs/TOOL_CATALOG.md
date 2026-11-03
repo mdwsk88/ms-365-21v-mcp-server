@@ -2,7 +2,7 @@
 
 > This file is generated from the runtime registry by `npm run docs:tools`. Do not edit tool rows manually.
 
-The implementation contains **154 tools**. The current production permission boundary exposes **129 tools** and hides **25 tools** whose Graph delegated scopes are not approved. Every enabled business tool is mapped to an Entra App Role and one or more Microsoft Graph delegated permissions.
+The implementation contains **154 tools**. The current production permission boundary exposes **131 tools** and hides **23 tools** whose Graph delegated scopes are not approved. Every enabled business tool is mapped to an Entra App Role and one or more Microsoft Graph delegated permissions.
 
 In the default `hybrid` exposure mode, clients list only the **13 tools** marked *Direct* below (read-only Teams chat, mail, calendar and file scenarios plus gateway controls). Every other authorized tool is reached through `gateway_search_tools` and `gateway_execute_tool` with the same App Role, confirmation and audit checks. Change the direct set with `MCP_DIRECT_TOOLS`.
 
@@ -20,7 +20,7 @@ In the default `hybrid` exposure mode, clients list only the **13 tools** marked
 | SharePoint | 33 | 15 | 18 | `mcp.sharepoint` |
 | Smart M365 Insights | 2 | 2 | 0 | `mcp.calendar`, `mcp.mail`, `mcp.smart` |
 | Teams | 10 | 7 | 3 | `mcp.teams` |
-| Users and Profiles | 3 | 3 | 0 | `mcp.users` |
+| Users and Profiles | 5 | 5 | 0 | `mcp.users` |
 
 ## Calendar
 
@@ -204,11 +204,13 @@ In the default `hybrid` exposure mode, clients list only the **13 tools** marked
 |---|---|---|---|---|---|
 | `graph_get_me` | Get My Profile | Read | Discovery | `mcp.users` | `User.Read` |
 | `users_list` | List Organization Users | Read | Discovery | `mcp.users` | `User.ReadBasic.All` |
+| `users_list_direct_reports` | List User Direct Reports | Read | Discovery | `mcp.users` | `User.Read`, `User.ReadBasic.All` |
+| `users_list_memberships` | List User Memberships | Read | Discovery | `mcp.users` | `User.Read` |
 | `users_search` | Search Organization Users | Read | Discovery | `mcp.users` | `User.ReadBasic.All` |
 
 ## Disabled Pending Tenant Approval
 
-The following **25 tools** remain implemented but are excluded from both MCP discovery and direct invocation. They become available after the corresponding delegated permissions are approved and removed from `MCP_DISABLED_GRAPH_SCOPES`.
+The following **23 tools** remain implemented but are excluded from both MCP discovery and direct invocation. They become available after the corresponding delegated permissions are approved and removed from `MCP_DISABLED_GRAPH_SCOPES`.
 
 | Tool | Module | Graph delegated scopes |
 |---|---|---|
@@ -235,8 +237,6 @@ The following **25 tools** remain implemented but are excluded from both MCP dis
 | `teams_update_channel` | Teams | `ChannelSettings.ReadWrite.All` |
 | `users_get_manager` | Users and Profiles | `User.Read.All` |
 | `users_get_profile` | Users and Profiles | `User.Read.All` |
-| `users_list_direct_reports` | Users and Profiles | `User.Read.All` |
-| `users_list_memberships` | Users and Profiles | `User.Read.All` |
 
 ## Coverage Boundary
 

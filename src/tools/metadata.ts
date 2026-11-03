@@ -13,8 +13,8 @@ export const toolMetadata: Record<string, ToolMetadata> = {
   users_search: read('User.ReadBasic.All'),
   users_get_profile: read('User.Read.All'),
   users_get_manager: read('User.Read.All'),
-  users_list_direct_reports: read('User.Read.All'),
-  users_list_memberships: read('User.Read.All'),
+  users_list_direct_reports: read('User.Read', 'User.ReadBasic.All'),
+  users_list_memberships: { ...read('User.Read'), optionalGraphScopes: ['User.Read.All'] },
 
   groups_list: read('GroupMember.Read.All'),
   groups_get: read('GroupMember.Read.All'),
@@ -82,7 +82,7 @@ export const toolMetadata: Record<string, ToolMetadata> = {
   drive_list_versions: read('Files.Read'),
   drive_restore_version: write('restore_drive_version', 'Files.ReadWrite'),
   files_search: read('Files.Read.All', 'Sites.Read.All'),
-  files_get_download_url: read('Files.Read.All'),
+  files_get_download_url: { ...read('Files.Read.All'), optionalGraphScopes: ['Files.ReadWrite'] },
 
   sharepoint_search_sites: read('Sites.Read.All'),
   sharepoint_get_site: read('Sites.Read.All'),

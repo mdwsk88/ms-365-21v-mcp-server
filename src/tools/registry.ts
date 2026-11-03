@@ -1,4 +1,5 @@
 import type { AppConfig } from '../config.js';
+import { graphScopeEnabled } from '../scope-policy.js';
 import type { ToolMetadata, ToolModule, ToolRegistryEntry } from './types.js';
 
 export class ToolRegistry {
@@ -23,7 +24,7 @@ export class ToolRegistry {
         ...(module.toolMetadata?.[name] ?? {}),
         ...(metadataOverrides[name] ?? {})
       };
-      if (toolDisabledByGraphScopes(metadata.graphScopes ?? [], config.disabledGraphScopes)) {
+      if (!toolScopesEnabled(config, metadata.graphScopes ?? [])) {
         continue;
       }
       const requiredRoles = uniqueRoles([
@@ -39,6 +40,7 @@ export class ToolRegistry {
         requiresConfirmation: metadata.requiresConfirmation ?? metadata.isWriteOperation ?? false,
         operationType: metadata.operationType,
         graphScopes: metadata.graphScopes ?? [],
+        optionalGraphScopes: metadata.optionalGraphScopes ?? [],
         requiredRole: requiredRoles[0],
         requiredRoles
       });
@@ -85,16 +87,12 @@ export class ToolRegistry {
   }
 }
 
-export function toolDisabledByGraphScopes(graphScopes: string[], disabledGraphScopes: string[]): boolean {
-  if (graphScopes.length === 0 || disabledGraphScopes.length === 0) return false;
-  const disabled = new Set(disabledGraphScopes.map(normalizedScopeName));
-  return graphScopes.some(scope => disabled.has(normalizedScopeName(scope)));
-}
-
-function normalizedScopeName(scope: string): string {
-  const trimmed = scope.trim().replace(/\/+$/, '');
-  const slashIndex = trimmed.lastIndexOf('/');
-  return (slashIndex >= 0 ? trimmed.slice(slashIndex + 1) : trimmed).toLowerCase();
+/** Whether every scope a tool needs is enabled by MCP_DISABLED_GRAPH_SCOPES and MCP_ALLOWED_GRAPH_SCOPES. */
+export function toolScopesEnabled(
+  config: Pick<AppConfig, 'disabledGraphScopes' | 'allowedGraphScopes'>,
+  graphScopes: string[]
+): boolean {
+  return graphScopes.every(scope => graphScopeEnabled(config, scope));
 }
 
 function uniqueRoles(roles: string[]): string[] {
@@ -105,6 +103,7 @@ function cloneEntry(entry: ToolRegistryEntry): ToolRegistryEntry {
   return {
     ...entry,
     graphScopes: [...entry.graphScopes],
+    optionalGraphScopes: [...(entry.optionalGraphScopes ?? [])],
     requiredRoles: [...(entry.requiredRoles ?? [])]
   };
 }

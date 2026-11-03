@@ -1,6 +1,7 @@
 import type { AppConfig } from './config.js';
 import { GraphHttpError, graphRequest, listMessageAttachments, type QueryValue } from './graph.js';
 import { getRequestContext } from './request-context.js';
+import { requireGraphScope } from './scope-policy.js';
 import { htmlToText, normalizeText, preview, truncateText } from './text.js';
 
 // High-frequency read scenarios: Teams chats, mail, calendar and files.
@@ -802,11 +803,13 @@ async function resolveDriveItem(
   input: { url?: string; driveId?: string; itemId?: string }
 ): Promise<JsonRecord> {
   if (input.url) {
+    // The shares API documents Files.ReadWrite as its least-privileged delegated permission.
+    requireGraphScope(config, 'Files.ReadWrite', 'Opening a OneDrive or SharePoint file by link');
     try {
       return record(
         await graphRequest(config, 'GET', `/shares/${sharingToken(input.url)}/driveItem`, {
           headers: { Prefer: 'redeemSharingLinkIfNecessary' },
-          scopes: ['Files.Read.All']
+          scopes: ['Files.ReadWrite']
         })
       );
     } catch (error) {
@@ -838,6 +841,9 @@ async function redirectLocation(config: AppConfig, path: string, query?: Record<
   return text(response.location);
 }
 
+/** Microsoft Graph converts files to other formats only up to this size. */
+const pdfConversionMaxBytes = 2 * 1024 * 1024;
+
 export const downloadUrlNotice =
   'Pre-authenticated, short-lived URL: download it now with a plain HTTP GET (no Authorization header). Do not share, store or log it.';
 
@@ -867,8 +873,12 @@ export async function getFileDownloadUrl(
   const driveId = shaped.driveId;
   const itemId = shaped.itemId;
   const mimeType = text(record(item.file).mimeType);
-  const format = input.format ?? 'original';
   const notes: string[] = [];
+  let format = input.format ?? 'original';
+  if (format === 'pdf' && (shaped.size ?? 0) > pdfConversionMaxBytes) {
+    notes.push('PDF conversion supports files up to 2 MB, so the original file is returned instead.');
+    format = 'original';
+  }
   let downloadUrl: string | undefined;
 
   if (format === 'pdf') {

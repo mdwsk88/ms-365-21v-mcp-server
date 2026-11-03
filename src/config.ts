@@ -80,6 +80,8 @@ export type AppConfig = {
   directToolCategories: string[];
   directTools: string[];
   disabledGraphScopes: string[];
+  allowedGraphScopes: string[];
+  readOnly: boolean;
   roleBasedFiltering: boolean;
   auditLogEnabled: boolean;
   auditLogPath: string;
@@ -401,6 +403,11 @@ export function loadConfig(): AppConfig {
   const disabledGraphScopes = [
     ...new Set(parseList(optionalEnv('MCP_DISABLED_GRAPH_SCOPES')).map(scopeName))
   ];
+  const allowedGraphScopesValue = optionalEnv('MCP_ALLOWED_GRAPH_SCOPES');
+  const allowedGraphScopes = [...new Set(parseList(allowedGraphScopesValue).map(scopeName))];
+  if (allowedGraphScopesValue !== undefined && allowedGraphScopes.length === 0) {
+    throw new ConfigError('MCP_ALLOWED_GRAPH_SCOPES is set but lists no scopes; unset it to allow every scope.');
+  }
   const graphResilience: GraphResilienceConfig = {
     maxRetries: positiveIntegerEnv('MCP_GRAPH_MAX_RETRIES', 3),
     initialBackoffMs: positiveIntegerEnv('MCP_GRAPH_INITIAL_BACKOFF_MS', 1000),
@@ -482,6 +489,8 @@ export function loadConfig(): AppConfig {
     directToolCategories,
     directTools,
     disabledGraphScopes,
+    allowedGraphScopes,
+    readOnly: booleanEnv('MCP_READ_ONLY', false),
     roleBasedFiltering: booleanEnv('MCP_ROLE_BASED_FILTERING', true),
     auditLogEnabled: booleanEnv('MCP_AUDIT_LOG_ENABLED', true),
     auditLogPath: resolvePath(optionalEnv('MCP_AUDIT_LOG_PATH'), '.tokens/audit'),

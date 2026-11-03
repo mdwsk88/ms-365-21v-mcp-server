@@ -11,6 +11,8 @@ export interface ToolRegistryEntry {
   requiresConfirmation: boolean;
   operationType?: string;
   graphScopes: string[];
+  /** Scopes only some inputs need, such as a shared mailbox; checked at call time, never used to hide the tool. */
+  optionalGraphScopes?: string[];
   requiredRole?: string;
   requiredRoles?: string[];
 }
@@ -18,7 +20,7 @@ export interface ToolRegistryEntry {
 export type ToolMetadata = Partial<
   Pick<
     ToolRegistryEntry,
-    'isWriteOperation' | 'requiresConfirmation' | 'operationType' | 'graphScopes' | 'requiredRoles'
+    'isWriteOperation' | 'requiresConfirmation' | 'operationType' | 'graphScopes' | 'optionalGraphScopes' | 'requiredRoles'
   >
 >;
 
