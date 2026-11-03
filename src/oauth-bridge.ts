@@ -15,6 +15,7 @@ type DynamicClient = {
   responseTypes: string[];
   tokenEndpointAuthMethod: string;
   createdAt: number;
+  lastUsedAt?: number;
 };
 
 type PendingMicrosoftAuth = {
@@ -326,14 +327,71 @@ function escapeHtml(value: string): string {
     .replace(/'/g, '&#39;');
 }
 
+function isLoopbackHostname(hostname: string): boolean {
+  const lower = hostname.toLowerCase();
+  return lower === 'localhost' || lower === '127.0.0.1' || lower === '[::1]' || lower === '::1';
+}
+
 function isLoopbackRedirect(value: string): boolean {
   try {
-    const url = new URL(value);
-    const hostname = url.hostname.toLowerCase();
-    return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]' || hostname === '::1';
+    return isLoopbackHostname(new URL(value).hostname);
   } catch {
     return false;
   }
+}
+
+// Schemes that never identify a native app callback: browsers run, render or send these themselves.
+const refusedRedirectSchemes = new Set([
+  'about:', 'blob:', 'callto:', 'data:', 'file:', 'ftp:', 'intent:', 'javascript:', 'mailto:', 'sms:', 'tel:', 'vbscript:', 'ws:', 'wss:'
+]);
+
+function redirectHostAllowed(allowed: string[], hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  return allowed.some(entry =>
+    entry === '*' ? true : entry.startsWith('*.') ? host.endsWith(entry.slice(1)) : entry === host
+  );
+}
+
+/**
+ * Why a client redirect URI is refused, or undefined when it is allowed. Loopback addresses and
+ * private-use native app schemes (RFC 8252) are always allowed; other hosts must use https and be
+ * listed in MCP_OAUTH_REDIRECT_HOSTS. Otherwise anyone could register a client whose redirect URI
+ * they control and phish a signed-in user's authorization code: Microsoft shows no consent prompt
+ * for this server's own, already consented client.
+ */
+export function redirectUriProblem(config: Pick<AppConfig, 'oauthRedirectHosts'>, value: string): string | undefined {
+  if (value.length > 2000) return 'is longer than 2000 characters';
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return 'is not an absolute URI';
+  }
+  if (url.hash) return 'must not contain a fragment';
+  if (url.protocol === 'http:' || url.protocol === 'https:') {
+    if (isLoopbackHostname(url.hostname)) return undefined;
+    if (url.protocol !== 'https:') return 'must use https unless it points to a loopback address';
+    if (redirectHostAllowed(config.oauthRedirectHosts, url.hostname)) return undefined;
+    return `points to ${url.hostname}, which is not in MCP_OAUTH_REDIRECT_HOSTS`;
+  }
+  if (refusedRedirectSchemes.has(url.protocol)) return `uses the ${url.protocol} scheme`;
+  return undefined;
+}
+
+const maxDynamicClients = 1000;
+const maxRedirectUrisPerClient = 10;
+
+/** Makes room for a new client by forgetting the least recently used ones that hold no live session. */
+function pruneDynamicClients(state: PersistedBridgeState): boolean {
+  if (state.clients.length < maxDynamicClients) return true;
+  const now = nowSeconds();
+  const active = new Set(state.sessions.filter(session => session.expiresAt > now).map(session => session.clientId));
+  const removable = state.clients
+    .filter(client => !active.has(client.clientId))
+    .sort((left, right) => (left.lastUsedAt ?? left.createdAt) - (right.lastUsedAt ?? right.createdAt));
+  const remove = new Set(removable.slice(0, state.clients.length - maxDynamicClients + 1).map(client => client.clientId));
+  state.clients = state.clients.filter(client => !remove.has(client.clientId));
+  return state.clients.length < maxDynamicClients;
 }
 
 function callbackDeliveryPage(callbackUrl: string): string {
@@ -484,7 +542,7 @@ export function oauthBridgeAuthorizationServerMetadata(config: AppConfig) {
     issuer: config.oauthBridgeIssuer,
     authorization_endpoint: localUrl(config, '/oauth/authorize'),
     token_endpoint: localUrl(config, '/oauth/token'),
-    registration_endpoint: localUrl(config, '/oauth/register'),
+    registration_endpoint: config.oauthDynamicRegistration ? localUrl(config, '/oauth/register') : undefined,
     response_types_supported: ['code'],
     grant_types_supported: ['authorization_code', 'refresh_token'],
     token_endpoint_auth_methods_supported: ['none'],
@@ -526,6 +584,11 @@ export function mountOAuthBridgeRoutes(app: any, config: AppConfig): void {
   });
 
   mountPost('/oauth/register', async (req: any, res: any) => {
+    if (!config.oauthDynamicRegistration) {
+      oauthBridgeLog('dynamic_client_registration_disabled');
+      sendOAuthError(res, 403, 'access_denied', 'Dynamic client registration is disabled on this server.');
+      return;
+    }
     const body = req.body && typeof req.body === 'object' ? req.body : {};
     const redirectUris = Array.isArray(body.redirect_uris)
       ? body.redirect_uris.filter((value: unknown): value is string => typeof value === 'string')
@@ -535,10 +598,22 @@ export function mountOAuthBridgeRoutes(app: any, config: AppConfig): void {
       sendOAuthError(res, 400, 'invalid_client_metadata', 'redirect_uris is required.');
       return;
     }
+    if (redirectUris.length > maxRedirectUrisPerClient) {
+      sendOAuthError(res, 400, 'invalid_client_metadata', `At most ${maxRedirectUrisPerClient} redirect_uris are accepted.`);
+      return;
+    }
+    for (const redirectUri of redirectUris) {
+      const problem = redirectUriProblem(config, redirectUri);
+      if (problem) {
+        oauthBridgeLog('dynamic_client_rejected_redirect', { problem, ...safeUrlDetails(redirectUri) });
+        sendOAuthError(res, 400, 'invalid_redirect_uri', `redirect_uri ${problem}.`);
+        return;
+      }
+    }
 
     const client: DynamicClient = {
       clientId: randomToken('mcp_client'),
-      clientName: typeof body.client_name === 'string' ? body.client_name : 'MCP OAuth Client',
+      clientName: typeof body.client_name === 'string' ? body.client_name.slice(0, 200) : 'MCP OAuth Client',
       redirectUris,
       grantTypes: ['authorization_code', 'refresh_token'],
       responseTypes: ['code'],
@@ -547,6 +622,11 @@ export function mountOAuthBridgeRoutes(app: any, config: AppConfig): void {
     };
 
     const state = await loadBridgeState(config);
+    if (!pruneDynamicClients(state)) {
+      oauthBridgeLog('dynamic_client_rejected_full', { clients: state.clients.length });
+      sendOAuthError(res, 503, 'temporarily_unavailable', 'Too many registered clients. Try again later.');
+      return;
+    }
     state.clients.push(client);
     await saveBridgeState(config, state);
 
@@ -607,6 +687,13 @@ export function mountOAuthBridgeRoutes(app: any, config: AppConfig): void {
           ...safeUrlDetails(redirectUri)
         });
         sendOAuthError(res, 400, 'invalid_request', 'Unknown client_id or redirect_uri.');
+        return;
+      }
+      // Clients registered before the redirect policy applied are held to it here.
+      const redirectProblem = redirectUriProblem(config, redirectUri);
+      if (redirectProblem) {
+        oauthBridgeLog('authorize_rejected_redirect_policy', { problem: redirectProblem, ...safeUrlDetails(redirectUri) });
+        sendOAuthError(res, 400, 'invalid_request', `redirect_uri ${redirectProblem}.`);
         return;
       }
 
@@ -775,6 +862,7 @@ export function mountOAuthBridgeRoutes(app: any, config: AppConfig): void {
         }
 
         bridgeAuthCodes.delete(code);
+        client.lastUsedAt = nowSeconds();
         const session = await createBridgeSession(config, state, authCode);
         oauthBridgeLog('token_granted_authorization_code', {
           expiresIn: Math.max(60, session.expiresAt - nowSeconds()),
@@ -797,6 +885,13 @@ export function mountOAuthBridgeRoutes(app: any, config: AppConfig): void {
           sendOAuthError(res, 400, 'invalid_grant', 'Unknown refresh token.');
           return;
         }
+        if (params.client_id && params.client_id !== session.clientId) {
+          oauthBridgeLog('token_rejected_refresh_client_mismatch');
+          sendOAuthError(res, 400, 'invalid_grant', 'The refresh token was issued to another client.');
+          return;
+        }
+        const sessionClient = findClient(state, session.clientId);
+        if (sessionClient) sessionClient.lastUsedAt = nowSeconds();
         await refreshMicrosoftTokenForSession(config, session);
         session.scope = bridgeSessionScopes(config, session.scope);
         session.roles = session.roles ?? microsoftTokenRoles(session.microsoftToken);

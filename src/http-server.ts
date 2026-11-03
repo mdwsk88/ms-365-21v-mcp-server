@@ -16,6 +16,7 @@ import {
   protectedResourceMetadata,
   protectedResourceMetadataPaths
 } from './oauth-protected-resource.js';
+import { clientAddress, createRateLimits, mountAddressRateLimits, rateLimitLog } from './rate-limit.js';
 import { runWithRequestContext } from './request-context.js';
 import { rolesFromClaims } from './tools/runtime.js';
 
@@ -25,7 +26,7 @@ function jsonError(status: number, message: string) {
     body: {
       jsonrpc: '2.0',
       error: {
-        code: status === 401 ? -32001 : -32603,
+        code: status === 401 ? -32001 : status === 429 ? -32000 : -32603,
         message
       },
       id: null
@@ -105,7 +106,18 @@ function attachAuth(req: any, auth: InboundAuthResult): void {
 type McpHttpSession = {
   server: ReturnType<typeof createGraphMcpServer>;
   transport: StreamableHTTPServerTransport;
+  lastSeen: number;
 };
+
+function sessionLog(event: string, details: Record<string, unknown> = {}): void {
+  console.error(JSON.stringify({ component: 'http_session', event, ...details }));
+}
+
+function userKey(auth: InboundAuthResult): string | undefined {
+  const claims = auth.claims as { oid?: unknown; sub?: unknown } | undefined;
+  const key = claims?.oid ?? claims?.sub;
+  return typeof key === 'string' && key ? key : undefined;
+}
 
 export async function startHttpServer(config: AppConfig): Promise<void> {
   if (!config.inboundAuthDisabled) {
@@ -117,8 +129,54 @@ export async function startHttpServer(config: AppConfig): Promise<void> {
   if (allowedHosts) {
     console.error(`Accepted Host headers: ${allowedHosts.join(', ')}`);
   }
+  if (config.trustProxy !== false) app.set('trust proxy', config.trustProxy);
+  const rateLimits = createRateLimits(config);
+  mountAddressRateLimits(app, config, rateLimits);
+
+  // Sessions in least-recently-used order: each request moves its session to the end.
   const sessions = new Map<string, McpHttpSession>();
   const closingTransports = new WeakSet<StreamableHTTPServerTransport>();
+  const closeSession = (sessionId: string, reason: 'idle' | 'evicted') => {
+    const session = sessions.get(sessionId);
+    if (!session) return;
+    sessions.delete(sessionId);
+    sessionLog(reason === 'idle' ? 'expired_idle' : 'evicted_oldest', { sessions: sessions.size });
+    void session.transport.close();
+  };
+  const touchSession = (sessionId: string, session: McpHttpSession) => {
+    session.lastSeen = Date.now();
+    sessions.delete(sessionId);
+    sessions.set(sessionId, session);
+  };
+  const idleMs = config.httpSessionIdleMinutes * 60_000;
+  if (!config.httpStateless && idleMs > 0) {
+    setInterval(() => {
+      const cutoff = Date.now() - idleMs;
+      for (const [sessionId, session] of sessions) {
+        if (session.lastSeen >= cutoff) break;
+        closeSession(sessionId, 'idle');
+      }
+    }, Math.min(60_000, idleMs)).unref();
+  }
+
+  // Over the limit: 429 with Retry-After. Returns true when the request was answered.
+  const rejectOverLimit = (res: any, auth: InboundAuthResult, address: string, anonymous: boolean): boolean => {
+    if (!rateLimits || (auth.disabled && !anonymous)) return false;
+    const key = anonymous ? undefined : userKey(auth);
+    const result = key ? rateLimits.user.take(key) : anonymous ? rateLimits.address.take(address) : { allowed: true as const };
+    if (result.allowed) return false;
+    rateLimitLog(key ? 'user' : 'address');
+    res.set('Retry-After', String(result.retryAfterSeconds));
+    res
+      .status(429)
+      .json(
+        jsonError(
+          429,
+          `Rate limit exceeded: at most ${key ? config.rateLimitUserPerMinute : config.rateLimitIpPerMinute} requests per minute. Retry after ${result.retryAfterSeconds} seconds.`
+        ).body
+      );
+    return true;
+  };
 
   mountAdminRoutes(app, config);
 
@@ -142,6 +200,7 @@ export async function startHttpServer(config: AppConfig): Promise<void> {
         sendMode: config.sendMode,
         allowUnauthenticatedDiscovery: config.allowUnauthenticatedDiscovery,
         stateless: config.httpStateless,
+        dynamicClientRegistration: config.oauthBridgeEnabled ? config.oauthDynamicRegistration : undefined,
         readOnly: config.readOnly,
         disabledGraphScopes: config.disabledGraphScopes,
         allowedGraphScopes: config.allowedGraphScopes.length ? config.allowedGraphScopes : undefined
@@ -174,10 +233,12 @@ export async function startHttpServer(config: AppConfig): Promise<void> {
         const auth = await authenticateInboundRequest(config, req.headers.authorization);
         const sessionId = headerValue(req.headers['mcp-session-id']);
         const existingSession = sessionId ? sessions.get(sessionId) : undefined;
-        if (!existingSession) {
+        if (!existingSession || !sessionId) {
           res.status(404).json(jsonError(404, 'MCP session not found.').body);
           return;
         }
+        if (rejectOverLimit(res, auth, clientAddress(req), false)) return;
+        touchSession(sessionId, existingSession);
         attachAuth(req, auth);
         await runWithRequestContext(
           {
@@ -198,8 +259,10 @@ export async function startHttpServer(config: AppConfig): Promise<void> {
       const auth = anonymousDiscovery
         ? { disabled: true }
         : await authenticateInboundRequest(config, req.headers.authorization);
+      if (rejectOverLimit(res, auth, clientAddress(req), anonymousDiscovery)) return;
       const sessionId = config.httpStateless ? undefined : headerValue(req.headers['mcp-session-id']);
       const existingSession = sessionId ? sessions.get(sessionId) : undefined;
+      if (sessionId && existingSession) touchSession(sessionId, existingSession);
       const isInit = !config.httpStateless && isInitializationRequest(req.body);
       const server =
         existingSession?.server ??
@@ -215,7 +278,13 @@ export async function startHttpServer(config: AppConfig): Promise<void> {
           onsessioninitialized: config.httpStateless
             ? undefined
             : initializedSessionId => {
-                sessions.set(initializedSessionId, { server, transport });
+                if (config.httpMaxSessions > 0) {
+                  for (const oldestId of sessions.keys()) {
+                    if (sessions.size < config.httpMaxSessions) break;
+                    closeSession(oldestId, 'evicted');
+                  }
+                }
+                sessions.set(initializedSessionId, { server, transport, lastSeen: Date.now() });
               }
         });
       transport.onclose = () => {
