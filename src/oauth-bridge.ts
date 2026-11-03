@@ -48,6 +48,7 @@ type BridgeSession = {
   roles?: string[];
   expiresAt: number;
   createdAt: number;
+  lastUsedAt?: number;
 };
 
 type PersistedBridgeState = {
@@ -515,6 +516,46 @@ async function refreshMicrosoftTokenForSession(config: AppConfig, session: Bridg
   return true;
 }
 
+// A session whose access token expired can still be refreshed while Microsoft honours its refresh
+// token, so it is kept until it has been unused this long, not just until the access token expires.
+const bridgeSessionIdleSeconds = 30 * 24 * 60 * 60;
+const maxBridgeSessions = 2000;
+// Microsoft answers these when the sign-in behind a refresh token is gone for good.
+const definitiveMicrosoftErrors = new Set([
+  'invalid_grant',
+  'interaction_required',
+  'login_required',
+  'consent_required',
+  'invalid_client',
+  'unauthorized_client'
+]);
+
+function pruneBridgeSessions(state: PersistedBridgeState): void {
+  const now = nowSeconds();
+  state.sessions = state.sessions.filter(
+    session =>
+      session.expiresAt > now ||
+      (Boolean(session.microsoftToken?.refreshToken) &&
+        (session.lastUsedAt ?? session.createdAt) > now - bridgeSessionIdleSeconds)
+  );
+  if (state.sessions.length > maxBridgeSessions) {
+    state.sessions = state.sessions
+      .sort((left, right) => (right.lastUsedAt ?? right.createdAt) - (left.lastUsedAt ?? left.createdAt))
+      .slice(0, maxBridgeSessions);
+  }
+}
+
+/** Refreshes the Microsoft token if needed: ok, gone (sign in again) or unavailable (try later). */
+async function refreshSessionSafely(config: AppConfig, session: BridgeSession): Promise<'ok' | 'gone' | 'unavailable'> {
+  try {
+    return (await refreshMicrosoftTokenForSession(config, session)) ? 'ok' : 'gone';
+  } catch (error) {
+    const name = error instanceof Error ? error.name : 'unknown';
+    oauthBridgeLog('microsoft_refresh_token_failed', { error: name });
+    return definitiveMicrosoftErrors.has(name) ? 'gone' : 'unavailable';
+  }
+}
+
 async function createBridgeSession(
   config: AppConfig,
   state: PersistedBridgeState,
@@ -528,11 +569,12 @@ async function createBridgeSession(
     microsoftToken: authCode.microsoftToken,
     roles: microsoftTokenRoles(authCode.microsoftToken),
     expiresAt: Math.min(authCode.microsoftToken.expiresAt, nowSeconds() + 3600),
-    createdAt: nowSeconds()
+    createdAt: nowSeconds(),
+    lastUsedAt: nowSeconds()
   };
 
-  state.sessions = state.sessions.filter(existing => existing.expiresAt > nowSeconds());
   state.sessions.push(session);
+  pruneBridgeSessions(state);
   await saveBridgeState(config, state);
   return session;
 }
@@ -890,9 +932,21 @@ export function mountOAuthBridgeRoutes(app: any, config: AppConfig): void {
           sendOAuthError(res, 400, 'invalid_grant', 'The refresh token was issued to another client.');
           return;
         }
+        const refreshed = await refreshSessionSafely(config, session);
+        if (refreshed === 'unavailable') {
+          sendOAuthError(res, 503, 'temporarily_unavailable', 'Microsoft sign-in could not be refreshed right now. Try again shortly.');
+          return;
+        }
+        if (refreshed === 'gone') {
+          state.sessions = state.sessions.filter(existing => existing !== session);
+          await saveBridgeState(config, state);
+          oauthBridgeLog('token_rejected_refresh_session_gone');
+          sendOAuthError(res, 400, 'invalid_grant', 'The Microsoft sign-in behind this refresh token has expired. Sign in again.');
+          return;
+        }
         const sessionClient = findClient(state, session.clientId);
         if (sessionClient) sessionClient.lastUsedAt = nowSeconds();
-        await refreshMicrosoftTokenForSession(config, session);
+        session.lastUsedAt = nowSeconds();
         session.scope = bridgeSessionScopes(config, session.scope);
         session.roles = session.roles ?? microsoftTokenRoles(session.microsoftToken);
         session.accessToken = randomToken('mcp_at');
@@ -942,11 +996,11 @@ export async function authenticateOAuthBridgeToken(
     return undefined;
   }
 
-  const refreshed = await refreshMicrosoftTokenForSession(config, session);
-  if (!refreshed) {
+  if ((await refreshSessionSafely(config, session)) !== 'ok') {
     oauthBridgeLog('bearer_rejected_refresh_failed');
     return undefined;
   }
+  session.lastUsedAt = nowSeconds();
   await saveBridgeState(config, state);
 
   return {

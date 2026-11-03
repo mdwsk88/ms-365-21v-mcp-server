@@ -37,6 +37,7 @@ Maintenance release: mail attachments as download links, batch and cleaned mail 
 
 - stdio transport: dotenv 17 printed a log line to stdout on every start, so every stdio session since v0.1.0, including `docker run -i` from the MCP Registry entry, began with a line that is not JSON-RPC.
 - Text files read inline from attachments, OneDrive or SharePoint kept only single spaces and lost tabs, indentation and blank lines, which broke YAML, Python and TSV content. Only line endings and a byte-order mark change now.
+- OAuth bridge: each new sign-in deleted every session whose one-hour access token had expired, together with its refresh token, so a client idle for an hour (overnight, say) had to sign in again whenever someone else signed in first. Sessions now stay refreshable until unused for 30 days, and at most 2000 are kept. A refresh that Microsoft rejects for good answers `invalid_grant` so the client signs in again, instead of `500`; a transient failure answers `503` and keeps the session.
 
 ### Removed
 
