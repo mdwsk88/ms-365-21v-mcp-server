@@ -100,6 +100,9 @@ const trackingParameter = /^(utm_\w+|mc_[ce]id|fbclid|gclid|dclid|gbraid|wbraid|
 const workLinkHost =
   /(^|\.)(sharepoint\.(com|cn)|microsoftonline\.cn|teams\.microsoft\.com|teams\.live\.com|office\.com|office365\.cn|onedrive\.live\.com|1drv\.ms)$/i;
 const longLinkChars = 500;
+// How far back to look for the text before a link: enough for any link worth comparing, and it keeps
+// the cleanup linear in the body length.
+const lookBehindChars = 2100;
 
 function decodeComponent(value: string): string {
   try {
@@ -191,12 +194,12 @@ export function cleanMailText(value: string): { text: string; linksOmitted: numb
   const cleaned = value
     .replace(/\[cid:[^\]\s]*\]/gi, '[image]')
     .replace(/<mailto:([^>\s?]+)(?:\?[^>\s]*)?>/gi, (_match, address: string, offset: number, whole: string) => {
-      const before = whole.slice(0, offset);
+      const before = whole.slice(Math.max(0, offset - lookBehindChars), offset);
       if (before.trimEnd().toLowerCase().endsWith(decodeComponent(address).toLowerCase())) return '';
       return `${/\s$/.test(before) || !before ? '' : ' '}<${decodeComponent(address)}>`;
     })
     .replace(linkPattern, (_match, open: string | undefined, link: string, close: string | undefined, offset: number, whole: string) => {
-      const before = whole.slice(0, offset);
+      const before = whole.slice(Math.max(0, offset - lookBehindChars), offset);
       if (open && close) {
         // Outlook renders a hyperlink as "text<target>"; when the text is the same link, keep one copy.
         const target = cleanUrl(link);

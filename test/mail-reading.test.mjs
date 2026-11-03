@@ -122,6 +122,19 @@ test('mail text keeps one readable copy of each link and drops padding', () => {
   ]);
 });
 
+test('cleaning stays linear on very large newsletters', () => {
+  const block = index =>
+    `Item ${index}: https://example.com/p/${index}<${safeLink(`https://example.com/p/${index}?utm_source=n`)}> ` +
+    `contact sales${index}@example.cn<mailto:sales${index}@example.cn>\n`;
+  const body = Array.from({ length: 2000 }, (_, index) => block(index)).join('');
+  assert.ok(body.length > 500_000);
+  const started = performance.now();
+  const { text } = cleanMailText(body);
+  const elapsed = performance.now() - started;
+  assert.ok(elapsed < 400, `cleaning ${body.length} characters took ${Math.round(elapsed)} ms`);
+  assert.match(text, /^Item 0: https:\/\/example\.com\/p\/0 contact sales0@example\.cn$/m);
+});
+
 test('mail lists clean previews', () => {
   const row = shapeMailRow(
     { id: 'm1', bodyPreview: `\u034f \u200c Read ${safeLink('https://example.com/x?utm_medium=mail')} now` },
