@@ -142,7 +142,9 @@ export async function startHttpServer(config: AppConfig): Promise<void> {
         sendMode: config.sendMode,
         allowUnauthenticatedDiscovery: config.allowUnauthenticatedDiscovery,
         stateless: config.httpStateless,
-        disabledGraphScopes: config.disabledGraphScopes
+        readOnly: config.readOnly,
+        disabledGraphScopes: config.disabledGraphScopes,
+        allowedGraphScopes: config.allowedGraphScopes.length ? config.allowedGraphScopes : undefined
       });
     });
   }

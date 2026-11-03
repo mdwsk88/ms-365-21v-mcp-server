@@ -11,7 +11,7 @@ export const confirmModule: ToolModule = {
   description: 'Continues a sensitive operation after explicit human approval.',
   alwaysEnabled: true,
   toolNames: ['confirm_execute'],
-  isEnabled: config => hasConfirmationPolicy(config),
+  isEnabled: config => !config.readOnly && hasConfirmationPolicy(config),
   register(server) {
     server.registerTool(
       'confirm_execute',

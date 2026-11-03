@@ -34,6 +34,7 @@
     "start:http": "node dist/index.js --http",
     "setup": "node scripts/setup.mjs",
     "doctor": "node scripts/doctor.mjs",
+    "permissions": "node dist/index.js --list-permissions",
     "test:onboarding": "node --test test/onboarding.test.mjs",
     "docs:tools": "npm run build && node scripts/generate-tool-catalog.mjs",
     "check:public": "node scripts/public-release-check.mjs",

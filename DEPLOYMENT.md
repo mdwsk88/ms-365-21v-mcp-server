@@ -185,7 +185,13 @@ Entra 回调: https://mcp.example.cn/oauth/microsoft/callback
 | 联系人 | `Contacts.Read`、`Contacts.ReadWrite` |
 | 组织用户基础资料 | `User.ReadBasic.All` |
 
-每次增加权限后都要重新执行 admin consent。组织范围较大的 Teams、Group、User 和站点权限应先经过安全审批；未获批的 scope 可以保留在 `MCP_DISABLED_GRAPH_SCOPES`，相关工具会同时从工具列表和执行入口隐藏。
+每次增加权限后都要重新执行 admin consent。组织范围较大的 Teams、Group、User 和站点权限应先经过安全审批。
+
+推荐用 `MCP_ALLOWED_GRAPH_SCOPES` 列出应用上**已经同意**的全部委托权限（白名单）：需要其他权限的工具会自动从工具列表和执行入口隐藏，以后新增工具也不会因为缺权限在调用时才失败。较宽的权限可以覆盖较窄的，例如 `Mail.ReadWrite` 覆盖 `Mail.Read`。`MCP_DISABLED_GRAPH_SCOPES`（黑名单）仍然可用，并且优先于白名单。
+
+部署前后都可以运行 `npm run permissions`（或 `node dist/index.js --list-permissions --json`）：它按当前配置列出启用的工具需要哪些权限、哪些工具因为缺权限被隐藏，以及白名单里哪些权限没有工具使用。它只读配置，不访问网络。
+
+只想提供读取能力时，设置 `MCP_READ_ONLY=true`：所有发送、创建、修改、删除类工具和 `confirm_execute` 都会移除，`/healthz` 返回 `readOnly: true`。这时也可以从应用注册里删掉写权限；注意按链接打开文件用的 `/shares` 接口最低需要 `Files.ReadWrite`，删掉后 `files_get_download_url` 只能按文件 ID 使用。
 
 ### 2. 获取代码并填写配置
 
@@ -372,7 +378,8 @@ npm run dev:http
 - 只通过 HTTPS 暴露远程 MCP 和 OAuth callback。
 - 使用 Secret Manager 保存 client secret 和 `MCP_ADMIN_TOKEN`，不要提交 `.env`。
 - 启用 `MCP_ROLE_BASED_FILTERING=true`，并按最小权限给用户或组分配 App Roles。
-- 只移除已经在 Entra 中获批并完成 consent 的 `MCP_DISABLED_GRAPH_SCOPES`。
+- 用 `MCP_ALLOWED_GRAPH_SCOPES` 列出 Entra 中已同意的权限，并用 `npm run permissions` 核对；只把已经同意的权限加入白名单。
+- 只需要读取时设置 `MCP_READ_ONLY=true`。
 - 保持 `MCP_AUDIT_LOG_ENABLED=true`，并把日志接入组织规定的留存和 SIEM 流程。
 - 根据场景选择 `MCP_SEND_MODE` 和 `MCP_CONFIRM_OPERATIONS`。
 - 对公网部署增加反向代理、访问日志、限流、健康检查和凭据轮换。

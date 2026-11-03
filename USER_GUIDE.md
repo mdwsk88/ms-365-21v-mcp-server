@@ -170,7 +170,7 @@ JSON 配置示例：
 
 `mcp.admin` 只能放开当前部署已经加载且 Graph scope 已获批的工具，不会绕过 Microsoft Graph delegated permissions、用户对目标数据的实际访问权或敏感操作确认。
 
-**租户 Graph scope 边界**：当前有 13 项组织级 delegated permission 尚未进入应用注册或未完成同意，因此依赖它们的 25 个工具被部署配置隐藏。IT 后续获批权限时，需要先在 `21V-Graph-MCP-API` 中添加并完成 consent，再由运维从 `MCP_DISABLED_GRAPH_SCOPES` 移除对应 scope 并重新部署。仅给用户分配 App Role 不会恢复这些工具。
+**租户 Graph scope 边界**：部署只开放 Entra 中已经同意的委托权限对应的工具，需要其他权限的工具会被隐藏。IT 获批新权限后，需要先在 MCP API 应用中添加并完成 consent，再由运维把它加入 `MCP_ALLOWED_GRAPH_SCOPES`（或从 `MCP_DISABLED_GRAPH_SCOPES` 移除）并重启服务。`npm run permissions` 会列出当前被隐藏的工具和缺少的权限。仅给用户分配 App Role 不会恢复这些工具。
 
 **全文搜索的组合授权**：使用搜索工具需要 `mcp.search` + 对应数据域角色。例如搜索文件需要 `mcp.search` + `mcp.drive`，搜索邮件需要 `mcp.search` + `mcp.mail`。
 

@@ -24,6 +24,7 @@ export class ToolRegistry {
         ...(module.toolMetadata?.[name] ?? {}),
         ...(metadataOverrides[name] ?? {})
       };
+      if (config.readOnly && metadata.isWriteOperation) continue;
       if (!toolScopesEnabled(config, metadata.graphScopes ?? [])) {
         continue;
       }
