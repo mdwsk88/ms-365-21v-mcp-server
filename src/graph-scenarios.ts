@@ -339,6 +339,86 @@ export async function listChatMessagesWindow(
   };
 }
 
+const channelMessagesPattern = /^\/teams\/[^/]+\/channels\/[^/]+\/messages(\/[^/]+\/replies)?$/;
+
+/**
+ * Root posts of a Teams channel, or the replies under one post, in the same compact shape as chat
+ * messages. Needs ChannelMessage.Read.All, which requires admin consent.
+ */
+export async function listChannelMessagesOverview(
+  config: AppConfig,
+  input: { teamId: string; channelId: string; messageId?: string; top?: number; cursor?: string; format?: 'text' | 'html' }
+) {
+  const channelPath = `/teams/${segment(input.teamId)}/channels/${segment(input.channelId)}/messages`;
+  const path = input.cursor
+    ? cursorPath(config, input.cursor, channelMessagesPattern)
+    : input.messageId
+      ? `${channelPath}/${segment(input.messageId)}/replies`
+      : channelPath;
+  const response = await graphRequest(config, 'GET', path, {
+    query: input.cursor ? undefined : { $top: clamp(input.top, 20, 1, 50) },
+    scopes: ['ChannelMessage.Read.All']
+  });
+  const me = currentUser();
+  const format = input.format ?? 'text';
+  const messages = records(record(response).value)
+    .filter(message => !text(message.deletedDateTime))
+    .sort((left, right) => (text(left.createdDateTime) ?? '').localeCompare(text(right.createdDateTime) ?? ''))
+    .map(message => ({
+      ...shapeChatMessage(message, me, format, 4000),
+      subject: text(message.subject),
+      webLink: text(message.webUrl)
+    }));
+  return {
+    teamId: input.teamId,
+    channelId: input.channelId,
+    messageId: input.messageId,
+    count: messages.length,
+    order: 'oldest first within this page',
+    messages,
+    nextCursor: nextLink(response)
+  };
+}
+
+/**
+ * Microsoft Search over Teams messages the user can see. Each hit names the chat, or the team and
+ * channel, so the conversation can be read next with teams_list_chat_messages or
+ * teams_list_channel_messages. Channel hits need ChannelMessage.Read.All as well as Chat.Read.
+ */
+export async function searchTeamsMessages(config: AppConfig, input: { query: string; from?: number; size?: number }) {
+  const from = clamp(input.from, 0, 0, 1000);
+  const size = clamp(input.size, 20, 1, 50);
+  const response = await graphRequest(config, 'POST', '/search/query', {
+    body: { requests: [{ entityTypes: ['chatMessage'], query: { queryString: input.query }, from, size }] },
+    scopes: ['Chat.Read']
+  });
+  const container = record(records(record(records(record(response).value)[0]).hitsContainers)[0]);
+  const messages = records(container.hits).map(hit => {
+    const resource = record(hit.resource);
+    const channel = record(resource.channelIdentity);
+    const sender = record(resource.from);
+    const summary = text(hit.summary)?.replace(/<\/?c\d+>/g, '').replace(/<ddd\/>/g, '…');
+    return {
+      id: text(resource.id),
+      chatId: text(resource.chatId),
+      teamId: text(channel.teamId),
+      channelId: text(channel.channelId),
+      from: text(record(sender.emailAddress).name) ?? text(record(sender.user).displayName),
+      at: text(resource.createdDateTime),
+      subject: text(resource.subject),
+      summary: summary ? preview(htmlToText(summary), 300) : undefined,
+      webLink: text(resource.webLink) ?? text(resource.webUrl)
+    };
+  });
+  return {
+    query: input.query,
+    total: typeof container.total === 'number' ? container.total : undefined,
+    count: messages.length,
+    messages,
+    nextFrom: container.moreResultsAvailable === true ? from + messages.length : undefined
+  };
+}
+
 // Mail
 
 /**

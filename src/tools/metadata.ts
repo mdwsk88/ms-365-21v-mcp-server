@@ -161,5 +161,5 @@ export const toolMetadata: Record<string, ToolMetadata> = {
   search_calendar: { ...read('Calendars.Read'), requiredRoles: ['mcp.calendar'] },
   search_files: { ...read('Files.Read.All'), requiredRoles: ['mcp.drive'] },
   search_sharepoint: { ...read('Sites.Read.All'), requiredRoles: ['mcp.sharepoint'] },
-  search_teams: { ...read('Chat.Read'), requiredRoles: ['mcp.teams'] },
+  search_teams: { ...read('Chat.Read'), requiredRoles: ['mcp.teams'], optionalGraphScopes: ['ChannelMessage.Read.All'] },
 };

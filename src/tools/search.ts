@@ -1,5 +1,6 @@
 import { z } from 'zod/v4';
 import { searchMicrosoft365 } from '../graph-extended.js';
+import { searchTeamsMessages } from '../graph-scenarios.js';
 import { describeTool, runTool } from './results.js';
 import type { ToolModule } from './types.js';
 
@@ -134,18 +135,17 @@ export const searchModule: ToolModule = {
       {
         title: 'Search Teams Messages',
         description: describeTool(
-          'Search Microsoft Teams chat messages with Microsoft Search. Requires both mcp.search and mcp.teams roles.',
-          ['全文搜索Teams消息', '搜索聊天记录', '用Microsoft Search查Teams讨论']
+          'Search Teams chat and channel messages by keywords with Microsoft Search. Each hit has sender, time, a highlighted summary and the chatId (or teamId and channelId) to read the conversation with teams_list_chat_messages or teams_list_channel_messages. Continue with from set to nextFrom. Requires delegated Chat.Read; channel hits also need ChannelMessage.Read.All. Requires both mcp.search and mcp.teams roles.',
+          ['全文搜索Teams消息', '搜索聊天记录', '用Microsoft Search查Teams讨论', '查找谁在Teams里提到过']
         ),
         inputSchema: {
-          query: z.string().min(1).max(1000).describe('Microsoft Search query string.'),
-          ...pagingSchema
-        }
+          query: z.string().min(1).max(1000).describe('Keywords or KQL, for example "budget from:Zhang".'),
+          from: z.number().int().min(0).max(1000).optional().describe('Zero-based hit offset: nextFrom from the previous call.'),
+          size: z.number().int().min(1).max(50).optional().describe('Hits to return, from 1 to 50. Defaults to 20.')
+        },
+        annotations: { readOnlyHint: true, openWorldHint: true }
       },
-      async ({ query, from, size }) =>
-        runTool(async () =>
-          searchMicrosoft365(config, 'chatMessage', query, ['Chat.Read'], from, size)
-        )
+      async ({ query, from, size }) => runTool(async () => searchTeamsMessages(config, { query, from, size }))
     );
   }
 };

@@ -870,38 +870,6 @@ export async function listTeamChannels(config: AppConfig, teamId: string): Promi
   });
 }
 
-export async function listChannelMessages(
-  config: AppConfig,
-  teamId: string,
-  channelId: string,
-  top?: number
-): Promise<unknown> {
-  return graphRequest(config, 'GET', `/teams/${pathSegment(teamId)}/channels/${pathSegment(channelId)}/messages`, {
-    query: {
-      $top: clampTop(top, 10, 50)
-    },
-    scopes: ['ChannelMessage.Read.All']
-  });
-}
-
-export async function listChannelMessageReplies(
-  config: AppConfig,
-  teamId: string,
-  channelId: string,
-  messageId: string,
-  top?: number
-): Promise<unknown> {
-  return graphRequest(
-    config,
-    'GET',
-    `/teams/${pathSegment(teamId)}/channels/${pathSegment(channelId)}/messages/${pathSegment(messageId)}/replies`,
-    {
-      query: { $top: clampTop(top, 10, 50) },
-      scopes: ['ChannelMessage.Read.All']
-    }
-  );
-}
-
 export async function sendChannelMessage(
   config: AppConfig,
   teamId: string,
