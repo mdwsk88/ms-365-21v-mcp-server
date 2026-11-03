@@ -9,7 +9,7 @@ import {
 } from './graph.js';
 import { getRequestContext } from './request-context.js';
 import { requireGraphScope } from './scope-policy.js';
-import { htmlToText, normalizeText, preview, truncateText } from './text.js';
+import { cleanMailText, fileText, htmlToText, normalizeText, preview, truncateText } from './text.js';
 
 // High-frequency read scenarios: Teams chats, mail, calendar and files.
 // Each function returns compact, model-oriented records instead of raw Graph payloads.
@@ -371,7 +371,7 @@ export function shapeMailRow(message: JsonRecord, me: CurrentUser) {
     ccCount: cc.length || undefined,
     myRole,
     receivedAt: text(message.receivedDateTime),
-    preview: preview(text(message.bodyPreview), 300),
+    preview: preview(cleanMailText(text(message.bodyPreview) ?? '').text, 300),
     isRead: message.isRead === true,
     flagged: text(flag.flagStatus) === 'flagged' ? true : undefined,
     flagDue: text(record(flag.dueDateTime).dateTime),
@@ -464,17 +464,16 @@ export async function searchMailOverview(
   return { query: input.query, count: messages.length, messages, nextCursor: nextLink(response) };
 }
 
-export async function readMailMessage(
-  config: AppConfig,
-  input: {
-    messageId: string;
-    bodyFormat?: 'text' | 'html';
-    onlyNewContent?: boolean;
-    maxChars?: number;
-    offset?: number;
-    includeAttachments?: boolean;
-  }
-) {
+type ReadMailOptions = {
+  bodyFormat?: 'text' | 'html';
+  onlyNewContent?: boolean;
+  maxChars?: number;
+  offset?: number;
+  includeAttachments?: boolean;
+  clean?: boolean;
+};
+
+export async function readMailMessage(config: AppConfig, input: ReadMailOptions & { messageId: string }) {
   const bodyFormat = input.bodyFormat ?? 'text';
   const bodyField = input.onlyNewContent ? 'uniqueBody' : 'body';
   const message = record(
@@ -488,12 +487,14 @@ export async function readMailMessage(
   );
   const body = record(message[bodyField]);
   const rawBody = text(body.content) ?? '';
-  const fullText =
+  const plainText =
     bodyFormat === 'html'
-      ? rawBody
+      ? undefined
       : text(body.contentType)?.toLowerCase() === 'html'
         ? htmlToText(rawBody)
         : normalizeText(rawBody);
+  const cleaned = plainText !== undefined && input.clean !== false ? cleanMailText(plainText) : undefined;
+  const fullText = cleaned?.text ?? plainText ?? rawBody;
   const characters = Array.from(fullText);
   const maxChars = clamp(input.maxChars, 20000, 200, 100000);
   const offset = clamp(input.offset, 0, 0, Math.max(0, characters.length));
@@ -535,12 +536,63 @@ export async function readMailMessage(
       text: slice,
       offset,
       totalChars: characters.length,
-      nextOffset: end < characters.length ? end : undefined
+      nextOffset: end < characters.length ? end : undefined,
+      linksOmitted: cleaned?.linksOmitted || undefined
     },
     attachments,
     attachmentNote: attachments?.length
       ? 'Call mail_get_attachment with an attachment id to read small text attachments inline or get a single-use download URL.'
       : undefined
+  };
+}
+
+const maxBatchMessages = 10;
+const batchConcurrency = 4;
+
+async function mapWithConcurrency<T, R>(items: T[], limit: number, map: (item: T) => Promise<R>): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const index = next;
+      next += 1;
+      results[index] = await map(items[index] as T);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+
+function itemError(error: unknown) {
+  if (error instanceof GraphHttpError) {
+    const graphError = record(record(error.responseBody).error);
+    return { status: error.status, code: text(graphError.code), message: text(graphError.message) ?? error.message };
+  }
+  const code = error && typeof error === 'object' && 'code' in error ? text((error as { code?: unknown }).code) : undefined;
+  return { code, message: error instanceof Error ? error.message : String(error) };
+}
+
+/**
+ * Reads several messages in one call, a few at a time. Each body starts at offset 0 and is capped at
+ * maxChars (8000 by default); a message that fails is returned with its error instead of failing the batch.
+ */
+export async function readMailMessages(config: AppConfig, input: ReadMailOptions & { messageIds: string[] }) {
+  const ids = [...new Set(input.messageIds.map(id => id.trim()).filter(Boolean))];
+  if (!ids.length) throw new Error('messageIds must list at least one message ID.');
+  if (ids.length > maxBatchMessages) throw new Error(`messageIds accepts at most ${maxBatchMessages} message IDs.`);
+  if (input.offset) throw new Error('offset works with a single messageId; continue one long message with messageId and offset.');
+  const maxChars = clamp(input.maxChars, 8000, 200, 20000);
+  const messages = await mapWithConcurrency(ids, batchConcurrency, async messageId => {
+    try {
+      return await readMailMessage(config, { ...input, messageId, offset: 0, maxChars });
+    } catch (error) {
+      return { id: messageId, error: itemError(error) };
+    }
+  });
+  return {
+    count: messages.length,
+    failed: messages.filter(message => 'error' in message).length || undefined,
+    messages
   };
 }
 
@@ -967,7 +1019,7 @@ export async function getMailAttachment(
         maxResponseBytes: maxInlineTextBytes
       })
     );
-    const decoded = normalizeText(Buffer.from(text(bytes.contentBase64) ?? '', 'base64').toString('utf8'));
+    const decoded = fileText(Buffer.from(text(bytes.contentBase64) ?? '', 'base64').toString('utf8'));
     const result = truncateText(decoded, clamp(input.maxTextChars, 20000, 200, 100000));
     return { ...summary, textContent: result.text, textTruncated: result.truncated || undefined };
   }
@@ -1072,7 +1124,7 @@ export async function getFileDownloadUrl(
       try {
         const response = await fetch(downloadUrl, { signal: AbortSignal.timeout(config.graphResilience.timeoutMs) });
         if (response.ok) {
-          const decoded = normalizeText(await response.text());
+          const decoded = fileText(await response.text());
           const result = truncateText(decoded, clamp(input.maxTextChars, 20000, 200, 100000));
           textContent = result.text;
           textTruncated = result.truncated || undefined;

@@ -495,7 +495,7 @@ test('download URLs resolve sharing links, convert to PDF and inline small text 
   );
   assert.equal(notes.requests[0].url.pathname, '/v1.0/me/drive/items/item-1');
   assert.equal(notes.requests[1].init.headers, undefined);
-  assert.equal(notes.result.textContent, '# Notes\n\nline');
+  assert.equal(notes.result.textContent, '# Notes\n\n\nline', 'file text keeps its blank lines; only line endings change');
 
   await assert.rejects(
     () => withMockFetch(() => json({ ...driveItem, folder: { childCount: 2 } }), () => getFileDownloadUrl(config, { itemId: 'item-1' })),
