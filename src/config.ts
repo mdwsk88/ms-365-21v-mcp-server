@@ -105,7 +105,8 @@ export class ConfigError extends Error {
 }
 
 const packageRoot = fileURLToPath(new URL('..', import.meta.url));
-dotenv.config({ path: path.join(packageRoot, '.env'), override: false });
+// quiet: dotenv 17 logs to stdout by default, which corrupts the stdio MCP channel.
+dotenv.config({ path: path.join(packageRoot, '.env'), override: false, quiet: true });
 
 function stripTrailingSlash(value: string): string {
   return value.replace(/\/+$/, '');
