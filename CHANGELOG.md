@@ -32,6 +32,7 @@ Maintenance release: mail attachments as download links, batch and cleaned mail 
 - Opening a file by link (`files_get_download_url` with `url`) requests `Files.ReadWrite`, the least-privileged permission of the shares API, and fails with `scope_not_enabled` where it is not allowed. PDF conversion of files over 2 MB returns the original file with a note instead of failing.
 - `users_list_direct_reports` needs only `User.Read` and `User.ReadBasic.All`, and `users_list_memberships` only `User.Read` for the signed-in user, so both stay available without `User.Read.All`.
 - A refresh token presented with another client's `client_id` is refused.
+- Dependencies: `@azure/msal-node` 7.1.2 (the server uses it only for on-behalf-of, which 7.x leaves unchanged), and body-parser, qs, fast-uri and ip-address updated for published advisories.
 
 ### Fixed
 
