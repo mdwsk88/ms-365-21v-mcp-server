@@ -13,7 +13,7 @@
 - **按用户授权**：可以用 Entra App Roles 控制每个用户可见和可调用的工具模块，工具列表与实际执行使用同一套校验。
 - **中文请求快路径**：常用工具可直接暴露；长尾工具可按中文意图动态搜索，兼顾调用速度和上下文大小。
 - **可审计的写操作**：邮件、Teams 消息和高风险写操作支持确认策略、一次性批准和脱敏审计。
-- **开箱即用的智能聚合**：提供邮件摘要和日程冲突分析，减少 Agent 自己组合多次 Graph 请求的成本。
+- **场景化直达工具**：读 Teams 聊天、邮件、日历和文档时直接返回整理后的结果（例如会议冲突标记），减少 Agent 自己组合多次 Graph 请求的成本。
 
 ## 已验证客户端
 
@@ -46,7 +46,6 @@
 | Teams | 团队、频道、聊天和消息，实际范围取决于租户权限 |
 | 联系人与用户 | 联系人管理、当前用户和组织用户基础资料 |
 | Microsoft Search | 跨邮件、日历、文件、SharePoint 和 Teams 搜索 |
-| 智能聚合 | 邮件摘要、日程冲突分析 |
 
 完整工具、App Role 和 Graph scope 映射见 [工具目录](docs/TOOL_CATALOG.md)。21V 对部分全球云 API 不提供支持，本项目不会把这些 API 标记为可用。
 
@@ -318,7 +317,7 @@ npm run dev:http
 1. 在 MCP API App Registration 的 Manifest 中加入 [预置 App Roles](docs/entra-app-roles.json)。
 2. 打开 **Entra ID > 企业应用程序 > MCP API 应用 > 用户和组**。
 3. 添加用户或组，并分配 `mcp.mail`、`mcp.calendar`、`mcp.drive` 等角色。
-4. 需要智能邮件摘要时分配 `mcp.smart` + `mcp.mail`；需要日程冲突分析时分配 `mcp.smart` + `mcp.calendar`。
+4. 需要全文搜索时，在数据域角色之外再分配 `mcp.search`，例如搜索邮件需要 `mcp.search` + `mcp.mail`。
 5. 把 `MCP_ROLE_BASED_FILTERING` 改为 `true` 并重启服务。
 6. 如需阻止未分配用户登录，在 Enterprise Application 的属性中把 **Assignment required?** 设置为 **Yes**。
 

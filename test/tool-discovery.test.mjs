@@ -78,20 +78,20 @@ test('hybrid mode keeps the configured fast lane and discovers the remaining too
   const server = createGraphMcpServer(
     config({
       toolExposureMode: 'hybrid',
-      directToolCategories: ['smart'],
+      directToolCategories: ['calendar'],
       directTools: ['mail_list_messages']
     }),
-    { userRoles: ['mcp.mail', 'mcp.calendar', 'mcp.smart'] }
+    { userRoles: ['mcp.mail', 'mcp.calendar'] }
   );
   const names = toolNames(server);
   assert.ok(names.includes('mail_list_messages'));
-  assert.ok(names.includes('smart_mail_digest'));
-  assert.ok(names.includes('smart_calendar_conflicts'));
+  assert.ok(names.includes('calendar_list_view'));
+  assert.ok(names.includes('calendar_get_schedule'));
   assert.ok(names.includes('gateway_search_tools'));
   assert.equal(names.includes('mail_send'), false);
-  assert.equal(names.includes('calendar_list_events'), false);
+  assert.equal(names.includes('mail_get_message'), false);
 
-  const search = await callAs(server, ['mcp.mail', 'mcp.calendar', 'mcp.smart'], 'gateway_search_tools', {
+  const search = await callAs(server, ['mcp.mail', 'mcp.calendar'], 'gateway_search_tools', {
     query: '发送邮件',
     category: 'mail'
   });
@@ -106,7 +106,7 @@ test('every deployed business tool can publish a discovery JSON schema', async (
   const entries = createToolRegistry(runtimeConfig)
     .getAll()
     .filter(entry => entry.category !== 'gateway');
-  assert.equal(entries.length, 149);
+  assert.equal(entries.length, 146);
   for (const entry of entries) {
     const schema = await callAs(server, ['mcp.admin'], 'gateway_get_tool_schema', {
       toolName: entry.name

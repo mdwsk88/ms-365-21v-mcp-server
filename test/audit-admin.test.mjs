@@ -185,7 +185,7 @@ test('admin REST API requires its static token and mounts under the public prefi
   const toolsResponse = await fetch(`${baseUrl}/tools/MCP_21V/admin/tools`, { headers });
   assert.equal(toolsResponse.status, 200);
   const tools = await toolsResponse.json();
-  assert.equal(tools.tools.length, 151);
+  assert.equal(tools.tools.length, 148);
   const sendMail = tools.tools.find((tool) => tool.name === 'mail_send');
   assert.equal(sendMail.title, 'Send Mail');
   assert.match(sendMail.description, /Send an email as the signed-in user/);

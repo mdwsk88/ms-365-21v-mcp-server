@@ -569,8 +569,45 @@ export async function listCalendarOverview(
     prefer: `outlook.timezone="${timeZone}"`,
     scopes: ['Calendars.Read']
   });
-  const events = records(record(response).value).map(shapeCalendarEvent);
-  return { timeZone, count: events.length, events, nextCursor: nextLink(response) };
+  const { events, conflictCount } = markCalendarOverlaps(records(record(response).value).map(shapeCalendarEvent));
+  return { timeZone, count: events.length, conflictCount, events, nextCursor: nextLink(response) };
+}
+
+type CalendarEventSummary = ReturnType<typeof shapeCalendarEvent>;
+
+/**
+ * Marks events that overlap in time with overlapsWith. Cancelled, all-day, declined and "free"
+ * events never conflict. Times share the requested time zone, so ISO strings compare directly.
+ */
+export function markCalendarOverlaps(events: CalendarEventSummary[]) {
+  const busy = events
+    .map((event, index) => ({ event, index }))
+    .filter(
+      ({ event }) =>
+        event.start &&
+        event.end &&
+        !event.isCancelled &&
+        !event.isAllDay &&
+        event.showAs !== 'free' &&
+        event.myResponse !== 'declined'
+    )
+    .sort((left, right) => (left.event.start ?? '').localeCompare(right.event.start ?? ''));
+  const overlaps = new Map<number, Array<{ id?: string; subject: string }>>();
+  const add = (index: number, other: CalendarEventSummary) =>
+    overlaps.set(index, [...(overlaps.get(index) ?? []), { id: other.id, subject: other.subject }]);
+  let conflictCount = 0;
+  for (let left = 0; left < busy.length; left += 1) {
+    for (let right = left + 1; right < busy.length; right += 1) {
+      if ((busy[right].event.start ?? '') >= (busy[left].event.end ?? '')) break;
+      conflictCount += 1;
+      add(busy[left].index, busy[right].event);
+      add(busy[right].index, busy[left].event);
+    }
+  }
+  return {
+    conflictCount,
+    events: events.map((event, index) => (overlaps.has(index) ? { ...event, overlapsWith: overlaps.get(index) } : event))
+  };
 }
 
 // Files (OneDrive + SharePoint)

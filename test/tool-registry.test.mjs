@@ -27,7 +27,7 @@ function toolNames(server) {
 
 test('registry exposes the complete 21V tool catalog and records authorization metadata', () => {
   const registry = createToolRegistry(gatewayConfig());
-  assert.equal(registry.getAll().length, 151);
+  assert.equal(registry.getAll().length, 148);
   assert.deepEqual(registry.getAllCategories(), [
     'calendar',
     'contacts',
@@ -37,7 +37,6 @@ test('registry exposes the complete 21V tool catalog and records authorization m
     'mail',
     'search',
     'sharepoint',
-    'smart',
     'teams',
     'users'
   ]);
@@ -48,13 +47,7 @@ test('registry exposes the complete 21V tool catalog and records authorization m
   assert.equal(sendMail?.operationType, 'send_email');
   assert.deepEqual(sendMail?.graphScopes, ['Mail.Send']);
   assert.deepEqual(sendMail?.requiredRoles, ['mcp.mail']);
-  assert.equal(registry.getByCategory('smart').length, 3);
-  assert.deepEqual(registry.getByName('smart_mail_digest')?.requiredRoles, ['mcp.smart', 'mcp.mail']);
-  assert.deepEqual(registry.getByName('smart_calendar_conflicts')?.requiredRoles, [
-    'mcp.smart',
-    'mcp.calendar'
-  ]);
-  assert.deepEqual(registry.getByName('smart_teams_unread')?.requiredRoles, ['mcp.smart', 'mcp.teams']);
+  assert.equal(registry.getByName('smart_mail_digest'), undefined);
   assert.deepEqual(registry.getByName('search_files')?.requiredRoles, ['mcp.search', 'mcp.drive']);
   assert.equal(registry.getByCategory('groups').length, 5);
   assert.equal(registry.getByCategory('search').length, 5);
@@ -87,8 +80,8 @@ test('disabled Graph scopes remove dependent tools from both registry and MCP ca
   const server = createGraphMcpServer(config, { bypassRoleFiltering: true });
   const disabled = new Set(disabledGraphScopes.map(scope => scope.toLowerCase()));
 
-  assert.equal(registry.getAll().length, 128);
-  assert.equal(toolNames(server).length, 128);
+  assert.equal(registry.getAll().length, 126);
+  assert.equal(toolNames(server).length, 126);
   assert.equal(
     registry.getAll().filter(tool => tool.graphScopes.some(scope => disabled.has(scope.toLowerCase()))).length,
     0
@@ -96,7 +89,6 @@ test('disabled Graph scopes remove dependent tools from both registry and MCP ca
   assert.equal(registry.getByName('users_get_profile'), undefined);
   assert.equal(registry.getByName('groups_list_members'), undefined);
   assert.equal(registry.getByName('teams_send_channel_message'), undefined);
-  assert.equal(registry.getByName('smart_teams_unread'), undefined);
   assert.equal(server._registeredTools.teams_send_channel_message, undefined);
 
   assert.ok(registry.getByName('users_search'));
@@ -105,8 +97,6 @@ test('disabled Graph scopes remove dependent tools from both registry and MCP ca
   assert.deepEqual(registry.getByName('users_list_memberships')?.optionalGraphScopes, ['User.Read.All']);
   assert.ok(registry.getByName('groups_check_my_memberships'));
   assert.ok(registry.getByName('teams_send_chat_message'));
-  assert.ok(registry.getByName('smart_mail_digest'));
-  assert.ok(registry.getByName('smart_calendar_conflicts'));
 });
 
 test('category filtering keeps base auth tools and only selected business modules', () => {
@@ -129,20 +119,7 @@ test('role filtering exposes no business tools without roles and module tools wi
   assert.ok(!toolNames(mailUser).includes('calendar_list_events'));
 
   const admin = createGraphMcpServer(config, { userRoles: ['mcp.admin'] });
-  assert.equal(toolNames(admin).length, 151);
-
-  const smartUser = createGraphMcpServer(config, { userRoles: ['mcp.smart'] });
-  assert.deepEqual(toolNames(smartUser).sort(), ['auth_status', 'confirm_execute']);
-
-  const smartMailUser = createGraphMcpServer(config, { userRoles: ['mcp.smart', 'mcp.mail'] });
-  assert.ok(toolNames(smartMailUser).includes('mail_list_messages'));
-  assert.ok(toolNames(smartMailUser).includes('smart_mail_digest'));
-  assert.ok(!toolNames(smartMailUser).includes('smart_calendar_conflicts'));
-  assert.ok(!toolNames(smartMailUser).includes('smart_teams_unread'));
-
-  const smartCalendarUser = createGraphMcpServer(config, { userRoles: ['mcp.smart', 'mcp.calendar'] });
-  assert.ok(toolNames(smartCalendarUser).includes('smart_calendar_conflicts'));
-  assert.ok(!toolNames(smartCalendarUser).includes('smart_mail_digest'));
+  assert.equal(toolNames(admin).length, 148);
 
   const groupsUser = createGraphMcpServer(config, { userRoles: ['mcp.groups'] });
   assert.equal(toolNames(groupsUser).length, 7);
@@ -175,22 +152,22 @@ test('invocation-level authorization denies a direct call even when the catalog 
   assert.match(result.content[0].text, /mcp\.mail/);
 });
 
-test('invocation-level smart authorization requires both smart and source roles', async () => {
+test('invocation-level search authorization requires both search and source roles', async () => {
   const config = gatewayConfig();
   const catalogServer = createGraphMcpServer(config, { bypassRoleFiltering: true });
-  const handler = catalogServer._registeredTools.smart_mail_digest.handler;
+  const handler = catalogServer._registeredTools.search_mail.handler;
 
   const result = await runWithRequestContext(
     {
-      requestId: 'smart-role-test',
+      requestId: 'search-role-test',
       userAssertion: 'not-used-because-role-check-runs-first',
-      inboundClaims: { sub: 'smart-only-user', roles: ['mcp.smart'] }
+      inboundClaims: { sub: 'search-only-user', roles: ['mcp.search'] }
     },
-    () => handler({ hours: 24, focus: 'unread' }, {})
+    () => handler({ query: 'budget' }, {})
   );
 
   assert.equal(result.isError, true);
   assert.match(result.content[0].text, /permission_denied/i);
-  assert.match(result.content[0].text, /mcp\.smart/);
+  assert.match(result.content[0].text, /mcp\.search/);
   assert.match(result.content[0].text, /mcp\.mail/);
 });

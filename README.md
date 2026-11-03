@@ -41,7 +41,7 @@
 |---|---|---|
 | “获取我的个人资料，确认当前登录账号。” | 验证 OAuth → Graph 链路 | 快速上手的默认场景 |
 | “列出最近 5 封邮件，只显示主题和发件人。” | 邮件读取 | Mail 模块、`Mail.Read`、`mcp.mail` |
-| “检查明天的会议是否有时间冲突。” | 日程冲突分析 | Calendar + Smart 模块、对应权限与角色 |
+| “检查明天的会议是否有时间冲突。” | 日程查询与冲突标记 | Calendar 模块、`Calendars.Read`、`mcp.calendar` |
 | “在我的 OneDrive 中查找项目计划。” | 文件检索 | OneDrive 模块、`Files.Read`、`mcp.drive` |
 | “整理回复内容，发送前让我确认。” | 邮件写入与确认 | 额外写权限；保持 `MCP_SEND_MODE=confirm` |
 
@@ -53,7 +53,7 @@
 - **客户端接入更统一**：Streamable HTTP + OAuth bridge，通过一个 MCP 地址连接；服务端使用当前用户的 delegated permissions / OBO。
 - **可控制的工具与写操作**：App Roles、按模块与 scope 过滤、常用工具直达/长尾工具发现，以及确认与脱敏审计。
 
-覆盖邮件、日历、OneDrive、SharePoint、Teams、联系人、组织用户、Microsoft Search 和智能聚合。**代码中实现了工具，不等于你的租户已授权，也不等于每个全球云 API 都在 21V 可用。**
+覆盖邮件、日历、OneDrive、SharePoint、Teams、联系人、组织用户和 Microsoft Search。**代码中实现了工具，不等于你的租户已授权，也不等于每个全球云 API 都在 21V 可用。**
 
 ## 快速开始
 

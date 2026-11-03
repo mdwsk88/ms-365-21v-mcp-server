@@ -25,7 +25,7 @@ Keep version tags fixed once published. Use a new patch version for corrections.
 - OBO token exchange and Graph China client
 - direct/discovery/hybrid tool routing
 - App Role, Graph scope, confirmation, audit, metrics, and resilience policies
-- smart aggregation tools, generic deployment examples, tests, and documentation
+- scenario tools for chats, mail, calendar and files, generic deployment examples, tests, and documentation
 
 ### Private deployment overlay
 

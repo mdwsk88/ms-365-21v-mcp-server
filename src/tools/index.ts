@@ -20,7 +20,6 @@ import { ToolRegistry, moduleEnabledForDeployment } from './registry.js';
 import { instrumentMcpServer, ToolRuntime } from './runtime.js';
 import { sharepointModule } from './sharepoint.js';
 import { searchModule } from './search.js';
-import { smartModule } from './smart.js';
 import { teamsModule } from './teams.js';
 import type { ToolAccessContext, ToolModule } from './types.js';
 import { usersModule } from './users.js';
@@ -38,7 +37,6 @@ export const toolModules: ToolModule[] = [
   teamsModule,
   contactsModule,
   searchModule,
-  smartModule,
   debugModule
 ];
 

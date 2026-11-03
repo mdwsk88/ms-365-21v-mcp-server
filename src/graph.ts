@@ -308,19 +308,6 @@ export async function getUser(config: AppConfig, userIdOrPrincipalName: string):
   });
 }
 
-export async function listMyMessagesSince(config: AppConfig, since: Date, top = 50): Promise<unknown> {
-  return graphRequest(config, 'GET', '/me/messages', {
-    query: {
-      $top: clampTop(top, 50, 50),
-      $select:
-        'id,subject,from,receivedDateTime,webLink,isRead,importance,hasAttachments,flag',
-      $orderby: 'receivedDateTime desc',
-      $filter: `receivedDateTime ge ${since.toISOString()}`
-    },
-    scopes: ['Mail.Read']
-  });
-}
-
 export async function listMailFolders(config: AppConfig, top?: number): Promise<unknown> {
   return graphRequest(config, 'GET', '/me/mailFolders', {
     query: {
@@ -949,25 +936,6 @@ export async function replyToChannelMessage(
       scopes: ['ChannelMessage.Send']
     }
   );
-}
-
-export async function listMyChats(config: AppConfig, top?: number): Promise<unknown> {
-  return graphRequest(config, 'GET', '/me/chats', {
-    query: {
-      $top: clampTop(top, 20, 50),
-      $select: 'id,topic,chatType,createdDateTime,lastUpdatedDateTime,webUrl'
-    },
-    scopes: ['Chat.Read']
-  });
-}
-
-export async function listChatMessages(config: AppConfig, chatId: string, top?: number): Promise<unknown> {
-  return graphRequest(config, 'GET', `/chats/${pathSegment(chatId)}/messages`, {
-    query: {
-      $top: clampTop(top, 10, 50)
-    },
-    scopes: ['Chat.Read']
-  });
 }
 
 export async function sendChatMessage(

@@ -47,7 +47,7 @@ The default image is `ghcr.io/mdwsk88/ms-365-21v-mcp-server:v0.2.0`, for Linux a
 | Ask your client | Required capability |
 |---|---|
 | List my five latest emails, showing only subject and sender | Mail read |
-| Check tomorrow's calendar for overlapping meetings | Calendar + Smart |
+| Check tomorrow's calendar for overlapping meetings | Calendar |
 | Find the project plan in my OneDrive | OneDrive read |
 | Prepare an email reply and ask before sending | Mail write + confirmation |
 

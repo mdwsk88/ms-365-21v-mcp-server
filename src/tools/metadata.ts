@@ -162,10 +162,4 @@ export const toolMetadata: Record<string, ToolMetadata> = {
   search_files: { ...read('Files.Read.All'), requiredRoles: ['mcp.drive'] },
   search_sharepoint: { ...read('Sites.Read.All'), requiredRoles: ['mcp.sharepoint'] },
   search_teams: { ...read('Chat.Read'), requiredRoles: ['mcp.teams'] },
-  smart_mail_digest: { ...read('Mail.Read', 'User.Read'), requiredRoles: ['mcp.mail'] },
-  smart_calendar_conflicts: { ...read('Calendars.Read'), requiredRoles: ['mcp.calendar'] },
-  smart_teams_unread: {
-    ...read('Team.ReadBasic.All', 'Channel.ReadBasic.All', 'ChannelMessage.Read.All', 'Chat.Read'),
-    requiredRoles: ['mcp.teams']
-  }
 };

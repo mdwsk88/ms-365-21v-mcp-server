@@ -70,8 +70,8 @@ export const calendarModule: ToolModule = {
       {
         title: 'List Calendar View',
         description: describeTool(
-          'List meetings and events, including recurring instances, in a date-time range: subject, time, location, organizer, my response, attendees and cancellation state. Requires delegated Calendars.Read.',
-          ['查看今天的会议', '按时间范围查看日历', '查看明天日程', '查看本周会议', '展开重复日程']
+          'List meetings and events, including recurring instances, in a date-time range: subject, time, location, organizer, my response, attendees and cancellation state. Overlapping meetings are flagged with overlapsWith and counted in conflictCount. For free time across people, use calendar_get_schedule. Requires delegated Calendars.Read.',
+          ['查看今天的会议', '按时间范围查看日历', '查看明天日程', '查看本周会议', '检查会议冲突', '展开重复日程']
         ),
         inputSchema: {
           startDateTime: z

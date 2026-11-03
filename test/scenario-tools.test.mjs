@@ -694,3 +694,36 @@ test('opening a file by link needs Files.ReadWrite, and large PDF conversions fa
   assert.equal(large.result.downloadUrl, driveItem['@microsoft.graph.downloadUrl']);
   assert.match(large.result.notes.join(' '), /2 MB/);
 });
+
+test('calendar view flags overlapping meetings but ignores cancelled, declined, free and all-day events', async (t) => {
+  const config = await graphTestConfig(t);
+  const event = (id, start, end, extra = {}) => ({
+    id,
+    subject: id,
+    start: { dateTime: `2026-10-12T${start}:00.0000000`, timeZone: 'China Standard Time' },
+    end: { dateTime: `2026-10-12T${end}:00.0000000`, timeZone: 'China Standard Time' },
+    ...extra
+  });
+  const { result } = await withMockFetch(
+    () =>
+      json({
+        value: [
+          event('standup', '09:00', '09:30'),
+          event('review', '09:15', '10:00'),
+          event('back-to-back', '10:00', '10:30'),
+          event('cancelled', '09:00', '10:00', { isCancelled: true }),
+          event('declined', '09:00', '10:00', { responseStatus: { response: 'declined' } }),
+          event('focus', '09:00', '12:00', { showAs: 'free' }),
+          event('holiday', '00:00', '23:59', { isAllDay: true })
+        ]
+      }),
+    () => listCalendarOverview(config, { startDateTime: '2026-10-11T16:00:00Z', endDateTime: '2026-10-12T16:00:00Z' })
+  );
+  assert.equal(result.conflictCount, 1);
+  const byId = Object.fromEntries(result.events.map(item => [item.id, item]));
+  assert.deepEqual(byId.standup.overlapsWith, [{ id: 'review', subject: 'review' }]);
+  assert.deepEqual(byId.review.overlapsWith, [{ id: 'standup', subject: 'standup' }]);
+  for (const id of ['back-to-back', 'cancelled', 'declined', 'focus', 'holiday']) {
+    assert.equal(byId[id].overlapsWith, undefined, id);
+  }
+});
