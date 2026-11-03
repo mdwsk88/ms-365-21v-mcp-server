@@ -32,6 +32,15 @@ import { recipientSchema } from './schemas.js';
 import { describeTool, runTool } from './results.js';
 import type { ToolModule } from './types.js';
 
+const mailboxSchema = z
+  .string()
+  .min(1)
+  .max(320)
+  .optional()
+  .describe(
+    'Read another mailbox instead of your own: a shared mailbox or one delegated to you, by email address or user ID. Needs delegated Mail.Read.Shared.'
+  );
+
 export const mailModule: ToolModule = {
   category: 'mail',
   displayName: 'Mail',
@@ -67,8 +76,8 @@ export const mailModule: ToolModule = {
       {
         title: 'List My Mail',
         description: describeTool(
-          'List mail newest first with sender, recipients, preview, read and flag state. Filter by folder (inbox by default, or all), time window, unread, flagged, importance or sender address. Use mail_search_messages for keywords. Requires delegated Mail.Read.',
-          ['查看我的邮件', '看最近邮件', '查看未读邮件', '查看标旗邮件', '某段时间的邮件', '列出收件箱邮件']
+          'List mail newest first with sender, recipients, preview, read and flag state. Filter by folder (inbox by default, or all), time window, unread, flagged, importance or sender address. Use mail_search_messages for keywords. mailbox reads a shared or delegated mailbox. Requires delegated Mail.Read.',
+          ['查看我的邮件', '看最近邮件', '查看未读邮件', '查看标旗邮件', '某段时间的邮件', '列出收件箱邮件', '查看共享邮箱']
         ),
         inputSchema: {
           top: z.number().int().min(1).max(50).optional().describe('Messages to return, from 1 to 50. Defaults to 20.'),
@@ -84,6 +93,7 @@ export const mailModule: ToolModule = {
           flaggedOnly: z.boolean().optional().describe('Only flagged (follow-up) messages.'),
           importance: z.enum(['low', 'normal', 'high']).optional().describe('Only this importance.'),
           from: z.string().max(320).optional().describe('Only messages from this sender email address.'),
+          mailbox: mailboxSchema,
           cursor: z.string().max(4000).optional().describe('nextCursor from the previous call.')
         },
         annotations: { readOnlyHint: true, openWorldHint: true }
@@ -96,13 +106,14 @@ export const mailModule: ToolModule = {
       {
         title: 'Search My Mail',
         description: describeTool(
-          'Search mail by keywords with KQL, for example "budget", "from:Zhang Wei", "subject:review", "hasAttachments:true". Searches all folders unless folder is set. Requires delegated Mail.Read.',
-          ['搜索邮件', '按关键词查邮件', '查找某人发的邮件', '查找某封邮件']
+          'Search mail by keywords with KQL, for example "budget", "from:Zhang Wei", "subject:review", "hasAttachments:true". Searches all folders unless folder is set; mailbox searches a shared or delegated mailbox. Requires delegated Mail.Read.',
+          ['搜索邮件', '按关键词查邮件', '查找某人发的邮件', '查找某封邮件', '搜索共享邮箱']
         ),
         inputSchema: {
           query: z.string().min(1).max(200).describe('Keywords or KQL such as from:, to:, subject:, body:, hasAttachments:.'),
           top: z.number().int().min(1).max(50).optional().describe('Messages to return, from 1 to 50. Defaults to 20.'),
           folder: z.string().min(1).max(300).optional().describe('Limit to a folder such as inbox; defaults to all folders.'),
+          mailbox: mailboxSchema,
           cursor: z.string().max(4000).optional().describe('nextCursor from the previous call.')
         },
         annotations: { readOnlyHint: true, openWorldHint: true }
@@ -148,7 +159,8 @@ export const mailModule: ToolModule = {
           clean: z
             .boolean()
             .optional()
-            .describe('Clean text bodies for reading. Defaults to true; false returns the text exactly as Outlook renders it.')
+            .describe('Clean text bodies for reading. Defaults to true; false returns the text exactly as Outlook renders it.'),
+          mailbox: mailboxSchema
         },
         annotations: { readOnlyHint: true, openWorldHint: true }
       },
@@ -294,7 +306,8 @@ export const mailModule: ToolModule = {
             .optional()
             .describe('url (default on HTTP deployments): single-use download URL. base64: inline bytes, up to 10 MB.'),
           includeText: z.boolean().optional().describe('Return small plain-text attachments inline. Defaults to true.'),
-          maxTextChars: z.number().int().min(200).max(100000).optional().describe('Maximum inline text characters. Defaults to 20000.')
+          maxTextChars: z.number().int().min(200).max(100000).optional().describe('Maximum inline text characters. Defaults to 20000.'),
+          mailbox: mailboxSchema
         },
         annotations: { readOnlyHint: true, openWorldHint: true }
       },

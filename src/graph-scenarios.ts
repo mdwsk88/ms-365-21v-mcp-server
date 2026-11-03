@@ -1,12 +1,6 @@
 import { attachmentLinkStore, attachmentLinkUrl, attachmentLinksAvailable } from './attachment-links.js';
 import type { AppConfig } from './config.js';
-import {
-  GraphHttpError,
-  graphAccessTokenForScopes,
-  graphRequest,
-  listMessageAttachments,
-  type QueryValue
-} from './graph.js';
+import { GraphHttpError, graphAccessTokenForScopes, graphRequest, type QueryValue } from './graph.js';
 import { getRequestContext } from './request-context.js';
 import { requireGraphScope } from './scope-policy.js';
 import { cleanMailText, fileText, htmlToText, normalizeText, preview, truncateText } from './text.js';
@@ -88,6 +82,20 @@ export function cursorPath(config: AppConfig, cursor: string, allowed: RegExp): 
     throw new Error('cursor belongs to a different resource; call this tool without cursor first.');
   }
   return url.toString();
+}
+
+/** Whose mailbox or calendar a cursor reads: the /users/{owner} segment, or undefined for /me. */
+function cursorOwner(config: AppConfig, cursor: string): string | undefined {
+  const basePath = new URL(config.graphBaseUrl).pathname;
+  const relative = decodeURIComponent(new URL(cursor).pathname.slice(basePath.length));
+  return relative.match(/^\/users\/([^/]+)\//)?.[1];
+}
+
+function isCurrentUser(value: string): boolean {
+  const lower = value.toLowerCase();
+  if (lower === 'me') return true;
+  const me = currentUser();
+  return lower === me.email || lower === me.id?.toLowerCase();
 }
 
 function nextLink(response: unknown): string | undefined {
@@ -340,11 +348,11 @@ export async function listChatMessagesWindow(
 export function mailboxBase(
   config: Pick<AppConfig, 'disabledGraphScopes' | 'allowedGraphScopes'>,
   mailbox: string | undefined
-): { base: string; scope: 'Mail.Read' | 'Mail.Read.Shared'; shared: boolean } {
+): { base: string; scope: 'Mail.Read' | 'Mail.Read.Shared'; mailbox?: string } {
   const value = mailbox?.trim();
-  if (!value || value.toLowerCase() === 'me') return { base: '/me', scope: 'Mail.Read', shared: false };
+  if (!value || isCurrentUser(value)) return { base: '/me', scope: 'Mail.Read' };
   requireGraphScope(config, 'Mail.Read.Shared', 'Reading a shared mailbox');
-  return { base: `/users/${segment(value)}`, scope: 'Mail.Read.Shared', shared: true };
+  return { base: `/users/${segment(value)}`, scope: 'Mail.Read.Shared', mailbox: value };
 }
 
 const mailListSelect =
@@ -382,12 +390,18 @@ export function shapeMailRow(message: JsonRecord, me: CurrentUser) {
   };
 }
 
-function mailFolderPath(folder: string | undefined): string {
+function mailFolderPath(base: string, folder: string | undefined): string {
   const value = folder?.trim() || 'inbox';
-  return value.toLowerCase() === 'all' ? '/me/messages' : `/me/mailFolders/${segment(value)}/messages`;
+  return value.toLowerCase() === 'all' ? `${base}/messages` : `${base}/mailFolders/${segment(value)}/messages`;
 }
 
-const mailCursorPattern = /^\/me\/(messages|mailFolders\/[^/]+\/messages)$/;
+const mailCursorPattern = /^\/(me|users\/[^/]+)\/(messages|mailFolders\/[^/]+\/messages)$/;
+
+async function followMailCursor(config: AppConfig, cursor: string) {
+  const url = cursorPath(config, cursor, mailCursorPattern);
+  const { scope, mailbox } = mailboxBase(config, cursorOwner(config, url));
+  return { response: await graphRequest(config, 'GET', url, { scopes: [scope] }), mailbox };
+}
 
 export function mailListFilter(input: {
   since?: string;
@@ -419,6 +433,7 @@ export async function listMailOverview(
     flaggedOnly?: boolean;
     from?: string;
     importance?: 'low' | 'normal' | 'high';
+    mailbox?: string;
     cursor?: string;
   }
 ) {
@@ -428,40 +443,58 @@ export async function listMailOverview(
   if (input.from && !input.from.includes('@')) {
     throw new Error('from must be an email address. To find mail by a person name, use mail_search_messages with "from:<name>".');
   }
-  const response = input.cursor
-    ? await graphRequest(config, 'GET', cursorPath(config, input.cursor, mailCursorPattern), { scopes: ['Mail.Read'] })
-    : await graphRequest(config, 'GET', mailFolderPath(input.folder), {
-        query: {
-          $top: top,
-          $select: mailListSelect,
-          $orderby: 'receivedDateTime desc',
-          $filter: mailListFilter({ ...input, since, until })
-        },
-        scopes: ['Mail.Read']
-      });
+  let response: unknown;
+  let mailbox: string | undefined;
+  if (input.cursor) {
+    ({ response, mailbox } = await followMailCursor(config, input.cursor));
+  } else {
+    const target = mailboxBase(config, input.mailbox);
+    mailbox = target.mailbox;
+    response = await graphRequest(config, 'GET', mailFolderPath(target.base, input.folder), {
+      query: {
+        $top: top,
+        $select: mailListSelect,
+        $orderby: 'receivedDateTime desc',
+        $filter: mailListFilter({ ...input, since, until })
+      },
+      scopes: [target.scope]
+    });
+  }
   const me = currentUser();
   const messages = records(record(response).value).map(message => shapeMailRow(message, me));
-  return { folder: input.folder?.trim() || 'inbox', count: messages.length, messages, nextCursor: nextLink(response) };
+  return {
+    mailbox,
+    folder: input.folder?.trim() || 'inbox',
+    count: messages.length,
+    messages,
+    nextCursor: nextLink(response)
+  };
 }
 
 export async function searchMailOverview(
   config: AppConfig,
-  input: { query: string; top?: number; folder?: string; cursor?: string }
+  input: { query: string; top?: number; folder?: string; mailbox?: string; cursor?: string }
 ) {
   const top = clamp(input.top, 20, 1, 50);
-  const response = input.cursor
-    ? await graphRequest(config, 'GET', cursorPath(config, input.cursor, mailCursorPattern), { scopes: ['Mail.Read'] })
-    : await graphRequest(config, 'GET', mailFolderPath(input.folder?.trim() || 'all'), {
-        query: {
-          $search: `"${input.query.replace(/"/g, '\\"')}"`,
-          $top: top,
-          $select: mailListSelect
-        },
-        scopes: ['Mail.Read']
-      });
+  let response: unknown;
+  let mailbox: string | undefined;
+  if (input.cursor) {
+    ({ response, mailbox } = await followMailCursor(config, input.cursor));
+  } else {
+    const target = mailboxBase(config, input.mailbox);
+    mailbox = target.mailbox;
+    response = await graphRequest(config, 'GET', mailFolderPath(target.base, input.folder?.trim() || 'all'), {
+      query: {
+        $search: `"${input.query.replace(/"/g, '\\"')}"`,
+        $top: top,
+        $select: mailListSelect
+      },
+      scopes: [target.scope]
+    });
+  }
   const me = currentUser();
   const messages = records(record(response).value).map(message => shapeMailRow(message, me));
-  return { query: input.query, count: messages.length, messages, nextCursor: nextLink(response) };
+  return { mailbox, query: input.query, count: messages.length, messages, nextCursor: nextLink(response) };
 }
 
 type ReadMailOptions = {
@@ -471,18 +504,21 @@ type ReadMailOptions = {
   offset?: number;
   includeAttachments?: boolean;
   clean?: boolean;
+  mailbox?: string;
 };
 
 export async function readMailMessage(config: AppConfig, input: ReadMailOptions & { messageId: string }) {
   const bodyFormat = input.bodyFormat ?? 'text';
   const bodyField = input.onlyNewContent ? 'uniqueBody' : 'body';
+  const { base, scope, mailbox } = mailboxBase(config, input.mailbox);
+  const messagePath = `${base}/messages/${segment(input.messageId)}`;
   const message = record(
-    await graphRequest(config, 'GET', `/me/messages/${segment(input.messageId)}`, {
+    await graphRequest(config, 'GET', messagePath, {
       query: {
         $select: `id,subject,from,toRecipients,ccRecipients,bccRecipients,receivedDateTime,sentDateTime,importance,isRead,flag,hasAttachments,conversationId,webLink,${bodyField}`
       },
       prefer: bodyFormat === 'text' ? 'outlook.body-content-type="text"' : undefined,
-      scopes: ['Mail.Read']
+      scopes: [scope]
     })
   );
   const body = record(message[bodyField]);
@@ -503,7 +539,14 @@ export async function readMailMessage(config: AppConfig, input: ReadMailOptions 
 
   const attachments =
     input.includeAttachments !== false && message.hasAttachments === true
-      ? records(record(await listMessageAttachments(config, input.messageId)).value).map(attachment => ({
+      ? records(
+          record(
+            await graphRequest(config, 'GET', `${messagePath}/attachments`, {
+              query: { $select: 'id,name,contentType,size,isInline,lastModifiedDateTime' },
+              scopes: [scope]
+            })
+          ).value
+        ).map(attachment => ({
           id: text(attachment.id),
           name: text(attachment.name),
           contentType: text(attachment.contentType),
@@ -515,6 +558,7 @@ export async function readMailMessage(config: AppConfig, input: ReadMailOptions 
   const me = currentUser();
   const row = shapeMailRow(message, me);
   return {
+    mailbox,
     id: row.id,
     subject: row.subject,
     from: row.from,
@@ -625,25 +669,60 @@ export function shapeCalendarEvent(event: JsonRecord) {
   };
 }
 
+/**
+ * The calendar a calendar call reads: the signed-in user's own, or another user's calendar shared with
+ * or delegated to them, which needs the Calendars.Read.Shared delegated permission.
+ */
+export function calendarBase(
+  config: Pick<AppConfig, 'disabledGraphScopes' | 'allowedGraphScopes'>,
+  owner: string | undefined
+): { base: string; scope: 'Calendars.Read' | 'Calendars.Read.Shared'; owner?: string } {
+  const value = owner?.trim();
+  if (!value || isCurrentUser(value)) return { base: '/me', scope: 'Calendars.Read' };
+  requireGraphScope(config, 'Calendars.Read.Shared', "Reading another person's calendar");
+  return { base: `/users/${segment(value)}`, scope: 'Calendars.Read.Shared', owner: value };
+}
+
+const calendarCursorPattern = /^\/(me|users\/[^/]+)\/calendarView$/;
+
 export async function listCalendarOverview(
   config: AppConfig,
-  input: { startDateTime: string; endDateTime: string; top?: number; timeZone?: string }
+  input: {
+    startDateTime: string;
+    endDateTime: string;
+    top?: number;
+    timeZone?: string;
+    calendarOwner?: string;
+    cursor?: string;
+  }
 ) {
   const timeZone = (input.timeZone ?? 'China Standard Time').replace(/"/g, '');
-  const response = await graphRequest(config, 'GET', '/me/calendarView', {
-    query: {
-      startDateTime: input.startDateTime,
-      endDateTime: input.endDateTime,
-      $top: clamp(input.top, 50, 1, 100),
-      $select:
-        'id,subject,organizer,attendees,start,end,location,webLink,isOnlineMeeting,responseStatus,seriesMasterId,isAllDay,isCancelled,showAs,bodyPreview',
-      $orderby: 'start/dateTime'
-    },
-    prefer: `outlook.timezone="${timeZone}"`,
-    scopes: ['Calendars.Read']
-  });
+  const prefer = `outlook.timezone="${timeZone}"`;
+  let response: unknown;
+  let owner: string | undefined;
+  if (input.cursor) {
+    const url = cursorPath(config, input.cursor, calendarCursorPattern);
+    const target = calendarBase(config, cursorOwner(config, url));
+    owner = target.owner;
+    response = await graphRequest(config, 'GET', url, { prefer, scopes: [target.scope] });
+  } else {
+    const target = calendarBase(config, input.calendarOwner);
+    owner = target.owner;
+    response = await graphRequest(config, 'GET', `${target.base}/calendarView`, {
+      query: {
+        startDateTime: input.startDateTime,
+        endDateTime: input.endDateTime,
+        $top: clamp(input.top, 50, 1, 100),
+        $select:
+          'id,subject,organizer,attendees,start,end,location,webLink,isOnlineMeeting,responseStatus,seriesMasterId,isAllDay,isCancelled,showAs,bodyPreview',
+        $orderby: 'start/dateTime'
+      },
+      prefer,
+      scopes: [target.scope]
+    });
+  }
   const { events, conflictCount } = markCalendarOverlaps(records(record(response).value).map(shapeCalendarEvent));
-  return { timeZone, count: events.length, conflictCount, events, nextCursor: nextLink(response) };
+  return { calendarOwner: owner, timeZone, count: events.length, conflictCount, events, nextCursor: nextLink(response) };
 }
 
 type CalendarEventSummary = ReturnType<typeof shapeCalendarEvent>;
