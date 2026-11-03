@@ -1,5 +1,12 @@
+import { attachmentLinkStore, attachmentLinkUrl, attachmentLinksAvailable } from './attachment-links.js';
 import type { AppConfig } from './config.js';
-import { GraphHttpError, graphRequest, listMessageAttachments, type QueryValue } from './graph.js';
+import {
+  GraphHttpError,
+  graphAccessTokenForScopes,
+  graphRequest,
+  listMessageAttachments,
+  type QueryValue
+} from './graph.js';
 import { getRequestContext } from './request-context.js';
 import { requireGraphScope } from './scope-policy.js';
 import { htmlToText, normalizeText, preview, truncateText } from './text.js';
@@ -326,6 +333,20 @@ export async function listChatMessagesWindow(
 
 // Mail
 
+/**
+ * The mailbox a mail call reads: the signed-in user's own, or a shared mailbox the user can open,
+ * which needs the Mail.Read.Shared delegated permission.
+ */
+export function mailboxBase(
+  config: Pick<AppConfig, 'disabledGraphScopes' | 'allowedGraphScopes'>,
+  mailbox: string | undefined
+): { base: string; scope: 'Mail.Read' | 'Mail.Read.Shared'; shared: boolean } {
+  const value = mailbox?.trim();
+  if (!value || value.toLowerCase() === 'me') return { base: '/me', scope: 'Mail.Read', shared: false };
+  requireGraphScope(config, 'Mail.Read.Shared', 'Reading a shared mailbox');
+  return { base: `/users/${segment(value)}`, scope: 'Mail.Read.Shared', shared: true };
+}
+
 const mailListSelect =
   'id,subject,from,toRecipients,ccRecipients,receivedDateTime,bodyPreview,isRead,importance,hasAttachments,flag,conversationId,webLink';
 
@@ -518,7 +539,7 @@ export async function readMailMessage(
     },
     attachments,
     attachmentNote: attachments?.length
-      ? 'Use mail_get_attachment through gateway_execute_tool to read attachment bytes.'
+      ? 'Call mail_get_attachment with an attachment id to read small text attachments inline or get a single-use download URL.'
       : undefined
   };
 }
@@ -880,6 +901,109 @@ async function redirectLocation(config: AppConfig, path: string, query?: Record<
 
 /** Microsoft Graph converts files to other formats only up to this size. */
 const pdfConversionMaxBytes = 2 * 1024 * 1024;
+
+const maxInlineTextBytes = 1024 * 1024;
+const maxBase64AttachmentBytes = 10 * 1024 * 1024;
+
+export const attachmentLinkNotice =
+  'Single-use, short-lived URL served by this MCP server: download it now with a plain HTTP GET (no Authorization header). It stops working after one download. Do not share, store or log it.';
+
+/**
+ * One mail attachment for an agent: small text attachments inline, cloud-file links as their source URL,
+ * everything else as a single-use download URL (or base64 when the deployment has no HTTP route).
+ */
+export async function getMailAttachment(
+  config: AppConfig,
+  input: {
+    messageId: string;
+    attachmentId: string;
+    mailbox?: string;
+    format?: 'url' | 'base64';
+    includeText?: boolean;
+    maxTextChars?: number;
+  }
+) {
+  const { base, scope } = mailboxBase(config, input.mailbox);
+  const attachmentPath = `${base}/messages/${segment(input.messageId)}/attachments/${segment(input.attachmentId)}`;
+  const meta = record(
+    await graphRequest(config, 'GET', attachmentPath, {
+      query: { $select: 'id,name,contentType,size,isInline,lastModifiedDateTime' },
+      scopes: [scope]
+    })
+  );
+  const odataType = text(meta['@odata.type']) ?? '';
+  const kind = odataType.endsWith('referenceAttachment') ? 'link' : odataType.endsWith('itemAttachment') ? 'item' : 'file';
+  const size = typeof meta.size === 'number' ? meta.size : undefined;
+  let name = text(meta.name) ?? 'attachment';
+  let contentType = text(meta.contentType) ?? 'application/octet-stream';
+  if (kind === 'item') {
+    contentType = 'message/rfc822';
+    if (!/\.[a-z0-9]{2,5}$/i.test(name)) name = `${name}.eml`;
+  }
+  const summary = {
+    id: text(meta.id) ?? input.attachmentId,
+    name,
+    kind,
+    contentType,
+    size,
+    inline: meta.isInline === true ? true : undefined
+  };
+
+  if (kind === 'link') {
+    const full = record(await graphRequest(config, 'GET', attachmentPath, { scopes: [scope] }));
+    return {
+      ...summary,
+      sourceUrl: text(full.sourceUrl),
+      hint: 'This attachment links to a cloud file. Call files_get_download_url with url set to sourceUrl.'
+    };
+  }
+
+  const valuePath = `${attachmentPath}/$value`;
+  if (kind === 'file' && input.includeText !== false && isTextLike(name, contentType) && (size ?? 0) <= maxInlineTextBytes) {
+    const bytes = record(
+      await graphRequest(config, 'GET', valuePath, {
+        scopes: [scope],
+        responseType: 'base64',
+        maxResponseBytes: maxInlineTextBytes
+      })
+    );
+    const decoded = normalizeText(Buffer.from(text(bytes.contentBase64) ?? '', 'base64').toString('utf8'));
+    const result = truncateText(decoded, clamp(input.maxTextChars, 20000, 200, 100000));
+    return { ...summary, textContent: result.text, textTruncated: result.truncated || undefined };
+  }
+
+  const format = input.format ?? (attachmentLinksAvailable(config) ? 'url' : 'base64');
+  if (format === 'base64') {
+    if ((size ?? 0) > maxBase64AttachmentBytes) {
+      throw new Error('Attachments larger than 10 MB are only available as a download URL (format url).');
+    }
+    const bytes = record(
+      await graphRequest(config, 'GET', valuePath, {
+        scopes: [scope],
+        responseType: 'base64',
+        maxResponseBytes: maxBase64AttachmentBytes
+      })
+    );
+    return { ...summary, contentBase64: text(bytes.contentBase64) };
+  }
+  if (!attachmentLinksAvailable(config)) {
+    throw new Error('Download URLs need the HTTP transport. Use format base64 for attachments up to 10 MB.');
+  }
+
+  const accessToken = await graphAccessTokenForScopes(config, [scope]);
+  const { ticket, expiresAt } = attachmentLinkStore.create(
+    { graphPath: valuePath, accessToken, name, contentType, userKey: currentUser().id ?? 'local' },
+    config.attachmentUrlTtlSeconds
+  );
+  return {
+    ...summary,
+    downloadUrl: attachmentLinkUrl(config, ticket),
+    expiresAt: new Date(expiresAt).toISOString(),
+    downloadUrlNotice: attachmentLinkNotice,
+    parsingHint:
+      'Download the bytes and parse them on the client. Attachments protected by sensitivity-label encryption may not be readable after download.'
+  };
+}
 
 export const downloadUrlNotice =
   'Pre-authenticated, short-lived URL: download it now with a plain HTTP GET (no Authorization header). Do not share, store or log it.';

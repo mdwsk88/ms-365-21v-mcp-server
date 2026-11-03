@@ -5,6 +5,7 @@ import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import type { AppConfig } from './config.js';
 import { hostHeaderAllowList, requireRemoteConfigured } from './config.js';
 import { mountAdminRoutes } from './admin-routes.js';
+import { mountAttachmentRoutes } from './attachment-links.js';
 import { mountConfirmationRoutes } from './confirmation-routes.js';
 import { authenticateInboundRequest, InboundAuthError, type InboundAuthResult } from './inbound-auth.js';
 import { createGraphMcpServer, serverVersion } from './mcp-server.js';
@@ -154,6 +155,7 @@ export async function startHttpServer(config: AppConfig): Promise<void> {
 
   mountOAuthBridgeRoutes(app, config);
   mountConfirmationRoutes(app, config);
+  mountAttachmentRoutes(app, config);
 
   const handleMcpRequest = async (
     req: any,

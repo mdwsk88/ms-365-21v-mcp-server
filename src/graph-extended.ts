@@ -215,21 +215,6 @@ export async function copyMessage(config: AppConfig, messageId: string, destinat
   });
 }
 
-export async function getMessageAttachment(
-  config: AppConfig,
-  messageId: string,
-  attachmentId: string,
-  raw = false
-): Promise<unknown> {
-  const path = `/me/messages/${segment(messageId)}/attachments/${segment(attachmentId)}${raw ? '/$value' : ''}`;
-  return graphRequest(config, 'GET', path, {
-    query: raw ? undefined : { $expand: 'microsoft.graph.itemattachment/item' },
-    scopes: ['Mail.Read'],
-    responseType: raw ? 'base64' : 'auto',
-    maxResponseBytes: 10 * 1024 * 1024
-  });
-}
-
 export async function addMessageFileAttachment(
   config: AppConfig,
   messageId: string,

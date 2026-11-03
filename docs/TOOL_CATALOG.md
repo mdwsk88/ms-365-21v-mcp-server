@@ -4,7 +4,7 @@
 
 The implementation contains **151 tools**. The current production permission boundary exposes **129 tools** and hides **22 tools** whose Graph delegated scopes are not approved. Every enabled business tool is mapped to an Entra App Role and one or more Microsoft Graph delegated permissions.
 
-In the default `hybrid` exposure mode, clients list only the **13 tools** marked *Direct* below (read-only Teams chat, mail, calendar and file scenarios plus gateway controls). Every other authorized tool is reached through `gateway_search_tools` and `gateway_execute_tool` with the same App Role, confirmation and audit checks. Change the direct set with `MCP_DIRECT_TOOLS`.
+In the default `hybrid` exposure mode, clients list only the **14 tools** marked *Direct* below (read-only Teams chat, mail, calendar and file scenarios plus gateway controls). Every other authorized tool is reached through `gateway_search_tools` and `gateway_execute_tool` with the same App Role, confirmation and audit checks. Change the direct set with `MCP_DIRECT_TOOLS`.
 
 ## Summary
 
@@ -112,7 +112,7 @@ In the default `hybrid` exposure mode, clients list only the **13 tools** marked
 | `mail_delete_folder` | Delete Mail Folder | Write | Discovery | `mcp.mail` | `Mail.ReadWrite` |
 | `mail_delete_message` | Delete Mail | Write | Discovery | `mcp.mail` | `Mail.ReadWrite` |
 | `mail_forward` | Forward Mail | Write | Discovery | `mcp.mail` | `Mail.Send` |
-| `mail_get_attachment` | Get Mail Attachment | Read | Discovery | `mcp.mail` | `Mail.Read` |
+| `mail_get_attachment` | Get Mail Attachment | Read | Direct | `mcp.mail` | `Mail.Read` |
 | `mail_get_folder` | Get Mail Folder | Read | Discovery | `mcp.mail` | `Mail.Read` |
 | `mail_get_message` | Get Mail Details | Read | Direct | `mcp.mail` | `Mail.Read` |
 | `mail_list_attachments` | List Mail Attachments | Read | Discovery | `mcp.mail` | `Mail.Read` |

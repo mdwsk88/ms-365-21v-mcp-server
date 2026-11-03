@@ -6,7 +6,6 @@ import {
   deleteMailFolder,
   deleteMessageAttachment,
   getMailFolder,
-  getMessageAttachment,
   listChildMailFolders,
   updateMailFolder
 } from '../graph-extended.js';
@@ -22,7 +21,7 @@ import {
   sendMail,
   updateMessageReadState
 } from '../graph.js';
-import { listMailOverview, readMailMessage, searchMailOverview } from '../graph-scenarios.js';
+import { getMailAttachment, listMailOverview, readMailMessage, searchMailOverview } from '../graph-scenarios.js';
 import { recipientSchema } from './schemas.js';
 import { describeTool, runTool } from './results.js';
 import type { ToolModule } from './types.js';
@@ -250,17 +249,22 @@ export const mailModule: ToolModule = {
       {
         title: 'Get Mail Attachment',
         description: describeTool(
-          'Read one mail attachment. Set raw=true to return file bytes as base64, limited to 10 MB. Requires delegated Mail.Read.',
-          ['读取邮件附件', '下载邮件附件', '查看附件内容']
+          'Read one mail attachment for an agent: small text files (txt, csv, json, md...) come back as text; other files as a single-use, short-lived download URL to fetch and parse on the client; attached cloud files as their link. Get attachment ids from mail_get_message. Requires delegated Mail.Read.',
+          ['读取邮件附件', '下载邮件附件', '查看附件内容', '打开邮件里的文件']
         ),
         inputSchema: {
           messageId: z.string().min(1).max(300).describe('Message ID.'),
-          attachmentId: z.string().min(1).max(500).describe('Attachment ID.'),
-          raw: z.boolean().optional().describe('Return raw attachment bytes as base64. Defaults to false.')
-        }
+          attachmentId: z.string().min(1).max(500).describe('Attachment ID from mail_get_message.'),
+          format: z
+            .enum(['url', 'base64'])
+            .optional()
+            .describe('url (default on HTTP deployments): single-use download URL. base64: inline bytes, up to 10 MB.'),
+          includeText: z.boolean().optional().describe('Return small plain-text attachments inline. Defaults to true.'),
+          maxTextChars: z.number().int().min(200).max(100000).optional().describe('Maximum inline text characters. Defaults to 20000.')
+        },
+        annotations: { readOnlyHint: true, openWorldHint: true }
       },
-      async ({ messageId, attachmentId, raw }) =>
-        runTool(async () => getMessageAttachment(config, messageId, attachmentId, raw))
+      async input => runTool(async () => getMailAttachment(config, input))
     );
 
     server.registerTool(

@@ -27,6 +27,7 @@ export const defaultDirectTools = [
   'mail_list_messages',
   'mail_search_messages',
   'mail_get_message',
+  'mail_get_attachment',
   'calendar_list_view',
   'files_search',
   'files_get_download_url'
@@ -88,6 +89,7 @@ export type AppConfig = {
   sendMode: SendMode;
   confirmOperations: string[];
   confirmTtlSeconds: number;
+  attachmentUrlTtlSeconds: number;
   graphResilience: GraphResilienceConfig;
   adminToken?: string;
   downstreamServices: DownstreamMcp[];
@@ -497,6 +499,8 @@ export function loadConfig(): AppConfig {
     sendMode: parseSendMode(),
     confirmOperations: parseList(optionalEnv('MCP_CONFIRM_OPERATIONS')).map(value => value.toLowerCase()),
     confirmTtlSeconds: Math.max(1, positiveIntegerEnv('MCP_CONFIRM_TTL_SECONDS', 300)),
+    // OBO tokens are reused only while at least 300 seconds remain, so a link must expire sooner.
+    attachmentUrlTtlSeconds: Math.min(280, Math.max(30, positiveIntegerEnv('MCP_ATTACHMENT_URL_TTL_SECONDS', 240))),
     graphResilience,
     adminToken: optionalEnv('MCP_ADMIN_TOKEN'),
     downstreamServices: parseDownstreamServices(optionalEnv('MCP_DOWNSTREAM_SERVICES')),
