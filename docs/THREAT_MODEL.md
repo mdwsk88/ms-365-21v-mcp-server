@@ -38,6 +38,9 @@ This model covers the Streamable HTTP MCP server, OAuth bridge, Microsoft Entra 
 | Graph throttling or outage cascades | Bounded timeout, `Retry-After`, exponential backoff for safe requests, and circuit breaker |
 | Excessive tool context or model misrouting | Role/scope filtering plus optional discovery and hybrid exposure modes |
 | Open redirect through OAuth client callbacks | Registered redirect validation and separate fixed Microsoft callback in bridge mode |
+| Authorization-code phishing through a dynamically registered client (confused deputy: Microsoft shows no consent prompt for this server's already consented client) | Client redirect URIs limited to loopback addresses, native app schemes and https hosts listed in `MCP_OAUTH_REDIRECT_HOSTS`, checked at registration and again at every authorization; registration can be turned off |
+| Request floods, runaway agents or registration spam | Per-address limits on the OAuth, attachment, confirmation and admin routes; per-user limits on the MCP endpoint; capped client registrations and MCP sessions |
+| Mail attachment download link leaks | Random single-use ticket, lifetime of at most 280 seconds, per-user cap, `no-store`, `nosniff` and sandbox CSP headers; the Graph token never leaves the server |
 
 ## Residual risks
 
@@ -46,7 +49,8 @@ This model covers the Streamable HTTP MCP server, OAuth bridge, Microsoft Entra 
 - Microsoft Graph and the MCP client remain external trust dependencies.
 - Conditional Access can permit or deny a login independently at the MCP resource and downstream Graph layers.
 - Host compromise can expose process memory and locally stored OAuth state; production deployments need OS hardening, secret management, TLS termination, patching, and centralized monitoring.
-- Dynamic client registration broadens the OAuth surface and should be disabled or restricted when every client is known in advance.
+- Dynamic client registration still lets anyone register a client whose redirect URI the policy allows; set `MCP_OAUTH_DYNAMIC_REGISTRATION=false` once every client is known in advance.
+- Rate limits live in process memory and count per instance; multi-instance deployments and distributed floods need limits at the proxy or gateway as well.
 
 ## Security verification
 

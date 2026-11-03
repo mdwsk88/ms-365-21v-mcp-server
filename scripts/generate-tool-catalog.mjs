@@ -49,7 +49,7 @@ const lines = [
   '',
   '> This file is generated from the runtime registry by `npm run docs:tools`. Do not edit tool rows manually.',
   '',
-  `The implementation contains **${implementationRegistry.getAll().length} tools**. The current production permission boundary exposes **${entries.length} tools** and hides **${disabledEntries.length} tools** whose Graph delegated scopes are not approved. Every enabled business tool is mapped to an Entra App Role and one or more Microsoft Graph delegated permissions.`,
+  `The implementation contains **${implementationRegistry.getAll().length} tools**. The current production permission boundary exposes **${entries.length} tools** and hides **${disabledEntries.length} tools** whose Graph delegated scopes are not approved. Every enabled business tool is mapped to an Entra App Role and one or more Microsoft Graph delegated permissions; an optional scope is needed only for some inputs, such as another person's mailbox.`,
   '',
   `In the default \`hybrid\` exposure mode, clients list only the **${entries.filter(isListedDirectly).length} tools** marked *Direct* below (read-only Teams chat, mail, calendar and file scenarios plus gateway controls). Every other authorized tool is reached through \`gateway_search_tools\` and \`gateway_execute_tool\` with the same App Role, confirmation and audit checks. Change the direct set with \`MCP_DIRECT_TOOLS\`.`,
   '',
@@ -71,7 +71,10 @@ for (const category of registry.getAllCategories()) {
   lines.push('', `## ${moduleLabel(category, tools)}`, '', '| Tool | Title | Access | Listed | Required App Roles | Graph delegated scopes |', '|---|---|---|---|---|---|');
   for (const tool of tools) {
     const roles = (tool.requiredRoles ?? []).map(code).join(', ') || '-';
-    const scopes = tool.graphScopes.map(code).join(', ') || '-';
+    const required = tool.graphScopes.map(code).join(', ') || '-';
+    const scopes = tool.optionalGraphScopes?.length
+      ? `${required}; optional ${tool.optionalGraphScopes.map(code).join(', ')}`
+      : required;
     const listed = isListedDirectly(tool) ? 'Direct' : 'Discovery';
     lines.push(`| ${code(tool.name)} | ${escapeCell(tool.title ?? tool.name)} | ${tool.isWriteOperation ? 'Write' : 'Read'} | ${listed} | ${roles} | ${scopes} |`);
   }
@@ -81,7 +84,7 @@ lines.push(
   '',
   '## Disabled Pending Tenant Approval',
   '',
-  `The following **${disabledEntries.length} tools** remain implemented but are excluded from both MCP discovery and direct invocation. They become available after the corresponding delegated permissions are approved and removed from \`MCP_DISABLED_GRAPH_SCOPES\`.`,
+  `The following **${disabledEntries.length} tools** remain implemented but are excluded from both MCP discovery and direct invocation. They become available after the corresponding delegated permissions are approved and allowed: added to \`MCP_ALLOWED_GRAPH_SCOPES\` or removed from \`MCP_DISABLED_GRAPH_SCOPES\`.`,
   '',
   '| Tool | Module | Graph delegated scopes |',
   '|---|---|---|',

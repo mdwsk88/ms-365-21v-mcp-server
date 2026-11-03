@@ -2,10 +2,53 @@
 
 ## [Unreleased]
 
+Maintenance release: mail attachments as download links, batch and cleaned mail reading, shared mailboxes and calendars, a read-only mode with a Graph permission allow-list, and hardening of the OAuth bridge and HTTP endpoint. **Breaking:** the smart tools are retired, OAuth client redirect URIs are restricted, and several outputs changed; see Migration.
+
+### Security
+
+- The OAuth bridge accepted any redirect URI at dynamic registration. Microsoft shows no consent prompt for the server's own, already consented client, so anyone could register a client whose redirect URI they control and phish a signed-in user's authorization code. Redirect URIs must now be a loopback address, a native app scheme, or https on a host listed in `MCP_OAUTH_REDIRECT_HOSTS`. The policy applies at registration and at every authorization, so clients registered earlier are covered too.
+
 ### Added
 
+- `mail_get_attachment` returns small text attachments inline, attached cloud files as their source URL, and other files as a single-use download URL served by this server at `/attachments/{ticket}`. A link expires after `MCP_ATTACHMENT_URL_TTL_SECONDS` (240, at most 280) and works once; the Graph token never leaves the server. stdio deployments keep base64 (up to 10 MB). The tool joins the default direct set.
+- `mail_get_message` reads up to 10 messages in one call with `messageIds`; a failing message comes back with its Graph status and error code.
+- `mailbox` on `mail_list_messages`, `mail_search_messages`, `mail_get_message` and `mail_get_attachment` reads a shared or delegated mailbox (needs `Mail.Read.Shared`). `calendarOwner` on `calendar_list_view` reads a calendar shared with the user (needs `Calendars.Read.Shared`), and `cursor` continues a long calendar view.
+- `calendar_list_view` flags overlapping meetings with `overlapsWith` and `conflictCount`, ignoring cancelled, declined, all-day and free events.
+- `MCP_READ_ONLY=true` removes every tool that sends, creates, changes or deletes data, together with `confirm_execute`.
+- `MCP_ALLOWED_GRAPH_SCOPES` lists the consented delegated permissions; tools that need anything else are hidden (fail closed). Broader scopes cover narrower ones. `MCP_DISABLED_GRAPH_SCOPES` still wins.
+- `npm run permissions` (`node dist/index.js --list-permissions [--json]`) prints the scopes the enabled tools need, optional per-input scopes, hidden tools with their missing scopes, and allowed scopes no tool uses, from configuration alone.
+- `MCP_OAUTH_DYNAMIC_REGISTRATION=false` turns client registration off. Registration keeps at most 1000 clients and 10 redirect URIs per client.
+- In-memory rate limits, answered with 429 and `Retry-After`: per client address on the OAuth, attachment, confirmation and admin routes (`MCP_RATE_LIMIT_IP_PER_MINUTE`, 120; registration a tenth of it), and per signed-in user on `/mcp` (`MCP_RATE_LIMIT_USER_PER_MINUTE`, 600). `MCP_TRUST_PROXY` decides which `X-Forwarded-For` hops count; a loopback bind trusts its same-host proxy by default.
+- Stateful MCP sessions close after `MCP_HTTP_SESSION_IDLE_MINUTES` (480) idle minutes, and at most `MCP_HTTP_MAX_SESSIONS` (200) are kept. Before, every session stayed in memory, about 2.6 MB each, until the client sent DELETE.
+- `/healthz` reports `readOnly`, `allowedGraphScopes` and `dynamicClientRegistration`.
 - Release automation publishes `server.json` to the official MCP Registry after each successful tagged release, using GitHub Actions OIDC. It skips versions that are already listed and can be run manually for an existing tag.
 - A documentation test keeps `server.json` and the Dockerfile ownership label in step with the package version.
+
+### Changed
+
+- Mail text bodies are cleaned by default: Safe Links unwrapped (any cloud, including 21Vianet), tracking parameters and repeated link targets dropped, inline images shown as `[image]`, and links over 500 characters outside Microsoft 365 shortened to `[link: host]`. `clean: false` returns the text as Outlook renders it. Mail previews are cleaned the same way, and every text the server returns loses zero-width and bidi-control padding.
+- `search_teams` returns one compact row per hit (sender, time, subject, summary, and the chat or team and channel to read next) with `total` and `nextFrom`. It stays out of the default direct tools until chat message search is verified in 21Vianet.
+- `teams_list_channel_messages` and `teams_list_channel_message_replies` return the chat message shape plus `subject` and `webLink`, skip deleted posts, sort each page oldest first and accept `cursor`.
+- Opening a file by link (`files_get_download_url` with `url`) requests `Files.ReadWrite`, the least-privileged permission of the shares API, and fails with `scope_not_enabled` where it is not allowed. PDF conversion of files over 2 MB returns the original file with a note instead of failing.
+- `users_list_direct_reports` needs only `User.Read` and `User.ReadBasic.All`, and `users_list_memberships` only `User.Read` for the signed-in user, so both stay available without `User.Read.All`.
+- A refresh token presented with another client's `client_id` is refused.
+
+### Fixed
+
+- stdio transport: dotenv 17 printed a log line to stdout on every start, so every stdio session since v0.1.0, including `docker run -i` from the MCP Registry entry, began with a line that is not JSON-RPC.
+- Text files read inline from attachments, OneDrive or SharePoint kept only single spaces and lost tabs, indentation and blank lines, which broke YAML, Python and TSV content. Only line endings and a byte-order mark change now.
+
+### Removed
+
+- `smart_mail_digest`, `smart_calendar_conflicts` and `smart_teams_unread`, the `smart` category and the `mcp.smart` App Role in the role template. Use `mail_list_messages`, `calendar_list_view` and `teams_list_chats` with `since`.
+- The `raw` parameter of `mail_get_attachment`; use `format: "base64"` for inline bytes.
+
+### Migration
+
+- Before upgrading an OAuth bridge deployment, list the hosts of web-based clients with https redirect URIs in `MCP_OAUTH_REDIRECT_HOSTS`; the `dynamic_client_registered` log events show each client's redirect origin. Local clients on loopback addresses need nothing.
+- Clients that called the smart tools, parsed raw payloads from `search_teams` or the channel message tools, or relied on `mail_get_attachment` returning base64 must switch to the replacements above.
+- An existing `.env` that sets `MCP_DIRECT_TOOLS` explicitly keeps its list; add `mail_get_attachment`, or clear the variable to use the new default set.
+- No Microsoft Entra change is required. `Mail.Read.Shared`, `Calendars.Read.Shared`, `ChannelMessage.Read.All` and `User.Read.All` enable optional features once they are consented and allowed. The `mcp.smart` role can stay assigned without effect, or be disabled and removed.
 
 ## [0.2.0] - 2026-10-14
 
