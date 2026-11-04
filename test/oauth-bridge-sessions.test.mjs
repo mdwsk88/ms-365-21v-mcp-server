@@ -46,9 +46,9 @@ const microsoftTokens = (now = Math.floor(Date.now() / 1000)) => ({
   }
 });
 
-function session(name, { expired, refreshToken = 'microsoft-refresh', lastUsedDaysAgo = 0 }) {
+function session(name, { expired, refreshToken = 'microsoft-refresh', lastUsedDaysAgo = 0, refreshedDaysAgo }) {
   const now = Math.floor(Date.now() / 1000);
-  return {
+  const saved = {
     clientId: 'client-1',
     accessToken: `${name}-access`,
     refreshToken: `${name}-refresh`,
@@ -58,12 +58,15 @@ function session(name, { expired, refreshToken = 'microsoft-refresh', lastUsedDa
       refreshToken,
       tokenType: 'Bearer',
       expiresAt: expired ? now - 600 : now + 3600,
-      acquiredAt: now - 7200
+      acquiredAt: refreshedDaysAgo === undefined ? now - 7200 : now - refreshedDaysAgo * day
     },
     expiresAt: expired ? now - 600 : now + 3000,
     createdAt: now - 40 * day,
     lastUsedAt: now - lastUsedDaysAgo * day
   };
+  // Sessions written by earlier versions have no lastUsedAt.
+  if (refreshedDaysAgo !== undefined) delete saved.lastUsedAt;
+  return saved;
 }
 
 async function bridge(t, sessions) {
@@ -119,7 +122,9 @@ test('a new sign-in keeps refreshable sessions and forgets idle or unrefreshable
   const { origin, token, readSessions } = await bridge(t, [
     session('overnight', { expired: true, lastUsedDaysAgo: 1 }),
     session('idle', { expired: true, lastUsedDaysAgo: 40 }),
-    session('norefresh', { expired: true, refreshToken: null })
+    session('norefresh', { expired: true, refreshToken: null }),
+    session('legacy', { expired: true, refreshedDaysAgo: 2 }),
+    session('legacystale', { expired: true, refreshedDaysAgo: 45 })
   ]);
 
   const verifier = 'v'.repeat(43);
@@ -148,8 +153,9 @@ test('a new sign-in keeps refreshable sessions and forgets idle or unrefreshable
   assert.equal(granted.status, 200);
 
   const kept = await readSessions();
-  assert.equal(kept.length, 2);
+  assert.equal(kept.length, 3);
   assert.ok(kept.includes('overnight'), 'yesterday’s session can still be refreshed in the morning');
+  assert.ok(kept.includes('legacy'), 'a session saved by an earlier version counts its last Microsoft refresh as use');
 });
 
 test('refresh asks for a new sign-in only when Microsoft rejects the sign-in for good', async (t) => {

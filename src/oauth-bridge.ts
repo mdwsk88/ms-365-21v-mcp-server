@@ -530,18 +530,20 @@ const definitiveMicrosoftErrors = new Set([
   'unauthorized_client'
 ]);
 
+// Sessions saved before lastUsedAt existed fall back to their last Microsoft token refresh.
+function lastActivity(session: BridgeSession): number {
+  return session.lastUsedAt ?? Math.max(session.createdAt, session.microsoftToken?.acquiredAt ?? 0);
+}
+
 function pruneBridgeSessions(state: PersistedBridgeState): void {
   const now = nowSeconds();
   state.sessions = state.sessions.filter(
     session =>
       session.expiresAt > now ||
-      (Boolean(session.microsoftToken?.refreshToken) &&
-        (session.lastUsedAt ?? session.createdAt) > now - bridgeSessionIdleSeconds)
+      (Boolean(session.microsoftToken?.refreshToken) && lastActivity(session) > now - bridgeSessionIdleSeconds)
   );
   if (state.sessions.length > maxBridgeSessions) {
-    state.sessions = state.sessions
-      .sort((left, right) => (right.lastUsedAt ?? right.createdAt) - (left.lastUsedAt ?? left.createdAt))
-      .slice(0, maxBridgeSessions);
+    state.sessions = state.sessions.sort((left, right) => lastActivity(right) - lastActivity(left)).slice(0, maxBridgeSessions);
   }
 }
 
