@@ -13,8 +13,8 @@ export const toolMetadata: Record<string, ToolMetadata> = {
   users_search: read('User.ReadBasic.All'),
   users_get_profile: read('User.Read.All'),
   users_get_manager: read('User.Read.All'),
-  users_list_direct_reports: read('User.Read.All'),
-  users_list_memberships: read('User.Read.All'),
+  users_list_direct_reports: read('User.Read', 'User.ReadBasic.All'),
+  users_list_memberships: { ...read('User.Read'), optionalGraphScopes: ['User.Read.All'] },
 
   groups_list: read('GroupMember.Read.All'),
   groups_get: read('GroupMember.Read.All'),
@@ -22,9 +22,9 @@ export const toolMetadata: Record<string, ToolMetadata> = {
   groups_list_owners: read('GroupMember.Read.All'),
   groups_check_my_memberships: read('User.Read'),
 
-  mail_list_messages: read('Mail.Read'),
-  mail_search_messages: read('Mail.Read'),
-  mail_get_message: read('Mail.Read'),
+  mail_list_messages: { ...read('Mail.Read'), optionalGraphScopes: ['Mail.Read.Shared'] },
+  mail_search_messages: { ...read('Mail.Read'), optionalGraphScopes: ['Mail.Read.Shared'] },
+  mail_get_message: { ...read('Mail.Read'), optionalGraphScopes: ['Mail.Read.Shared'] },
   mail_list_folders: read('Mail.Read'),
   mail_get_folder: read('Mail.Read'),
   mail_list_child_folders: read('Mail.Read'),
@@ -32,7 +32,7 @@ export const toolMetadata: Record<string, ToolMetadata> = {
   mail_update_folder: write('update_mail_folder', 'Mail.ReadWrite'),
   mail_delete_folder: write('delete_mail_folder', 'Mail.ReadWrite'),
   mail_list_attachments: read('Mail.Read'),
-  mail_get_attachment: read('Mail.Read'),
+  mail_get_attachment: { ...read('Mail.Read'), optionalGraphScopes: ['Mail.Read.Shared'] },
   mail_add_file_attachment: write('add_mail_attachment', 'Mail.ReadWrite'),
   mail_delete_attachment: write('delete_mail_attachment', 'Mail.ReadWrite'),
   mail_send: write('send_email', 'Mail.Send'),
@@ -46,7 +46,7 @@ export const toolMetadata: Record<string, ToolMetadata> = {
   mail_delete_message: write('delete_email', 'Mail.ReadWrite'),
 
   calendar_list_events: read('Calendars.Read'),
-  calendar_list_view: read('Calendars.Read'),
+  calendar_list_view: { ...read('Calendars.Read'), optionalGraphScopes: ['Calendars.Read.Shared'] },
   calendar_list_calendars: read('Calendars.Read'),
   calendar_create_calendar: write('create_calendar', 'Calendars.ReadWrite'),
   calendar_update_calendar: write('update_calendar', 'Calendars.ReadWrite'),
@@ -82,7 +82,7 @@ export const toolMetadata: Record<string, ToolMetadata> = {
   drive_list_versions: read('Files.Read'),
   drive_restore_version: write('restore_drive_version', 'Files.ReadWrite'),
   files_search: read('Files.Read.All', 'Sites.Read.All'),
-  files_get_download_url: read('Files.Read.All'),
+  files_get_download_url: { ...read('Files.Read.All'), optionalGraphScopes: ['Files.ReadWrite'] },
 
   sharepoint_search_sites: read('Sites.Read.All'),
   sharepoint_get_site: read('Sites.Read.All'),
@@ -161,11 +161,5 @@ export const toolMetadata: Record<string, ToolMetadata> = {
   search_calendar: { ...read('Calendars.Read'), requiredRoles: ['mcp.calendar'] },
   search_files: { ...read('Files.Read.All'), requiredRoles: ['mcp.drive'] },
   search_sharepoint: { ...read('Sites.Read.All'), requiredRoles: ['mcp.sharepoint'] },
-  search_teams: { ...read('Chat.Read'), requiredRoles: ['mcp.teams'] },
-  smart_mail_digest: { ...read('Mail.Read', 'User.Read'), requiredRoles: ['mcp.mail'] },
-  smart_calendar_conflicts: { ...read('Calendars.Read'), requiredRoles: ['mcp.calendar'] },
-  smart_teams_unread: {
-    ...read('Team.ReadBasic.All', 'Channel.ReadBasic.All', 'ChannelMessage.Read.All', 'Chat.Read'),
-    requiredRoles: ['mcp.teams']
-  }
+  search_teams: { ...read('Chat.Read'), requiredRoles: ['mcp.teams'], optionalGraphScopes: ['ChannelMessage.Read.All'] },
 };

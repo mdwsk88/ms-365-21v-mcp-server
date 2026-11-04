@@ -27,6 +27,7 @@ export const defaultDirectTools = [
   'mail_list_messages',
   'mail_search_messages',
   'mail_get_message',
+  'mail_get_attachment',
   'calendar_list_view',
   'files_search',
   'files_get_download_url'
@@ -55,6 +56,12 @@ export type AppConfig = {
   httpPath: string;
   oauthHttpPath?: string;
   httpStateless: boolean;
+  httpSessionIdleMinutes: number;
+  httpMaxSessions: number;
+  trustProxy: false | number | string;
+  rateLimitEnabled: boolean;
+  rateLimitUserPerMinute: number;
+  rateLimitIpPerMinute: number;
   publicBaseUrl?: string;
   publicPathPrefix: string;
   resourceUrl: string;
@@ -75,17 +82,22 @@ export type AppConfig = {
   oauthBridgePrompt?: string;
   oauthBridgeCallbackDelivery: 'redirect' | 'background';
   oauthBridgeStatePath: string;
+  oauthDynamicRegistration: boolean;
+  oauthRedirectHosts: string[];
   toolExposureMode: ToolExposureMode;
   toolCategories: string[];
   directToolCategories: string[];
   directTools: string[];
   disabledGraphScopes: string[];
+  allowedGraphScopes: string[];
+  readOnly: boolean;
   roleBasedFiltering: boolean;
   auditLogEnabled: boolean;
   auditLogPath: string;
   sendMode: SendMode;
   confirmOperations: string[];
   confirmTtlSeconds: number;
+  attachmentUrlTtlSeconds: number;
   graphResilience: GraphResilienceConfig;
   adminToken?: string;
   downstreamServices: DownstreamMcp[];
@@ -101,7 +113,8 @@ export class ConfigError extends Error {
 }
 
 const packageRoot = fileURLToPath(new URL('..', import.meta.url));
-dotenv.config({ path: path.join(packageRoot, '.env'), override: false });
+// quiet: dotenv 17 logs to stdout by default, which corrupts the stdio MCP channel.
+dotenv.config({ path: path.join(packageRoot, '.env'), override: false, quiet: true });
 
 function stripTrailingSlash(value: string): string {
   return value.replace(/\/+$/, '');
@@ -178,6 +191,34 @@ function parseAllowedHosts(value: string | undefined): string[] {
 }
 
 const loopbackHttpHosts = new Set(['127.0.0.1', 'localhost', '::1']);
+
+/**
+ * Which proxies may set X-Forwarded-For, in Express "trust proxy" terms. Behind a same-host reverse
+ * proxy (a loopback bind) only loopback peers are trusted; otherwise no forwarded header is.
+ */
+function parseTrustProxy(value: string | undefined, httpHost: string): false | number | string {
+  if (value === undefined) return loopbackHttpHosts.has(httpHost) ? 'loopback' : false;
+  const normalized = value.trim().toLowerCase();
+  if (['false', '0', 'no', 'off', 'none'].includes(normalized)) return false;
+  if (normalized === 'true') {
+    throw new ConfigError(
+      'MCP_TRUST_PROXY=true would trust any X-Forwarded-For value a client sends. Set the number of proxies in front of the server, or their addresses, such as loopback.'
+    );
+  }
+  return /^\d+$/.test(normalized) ? Number.parseInt(normalized, 10) : value.trim();
+}
+
+/** Host names allowed in OAuth client redirect URIs: exact names, *.suffix wildcards, or * for any. */
+function parseRedirectHosts(value: string | undefined): string[] {
+  const hosts = parseList(value).map(entry => {
+    const lower = entry.toLowerCase();
+    if (lower === '*' || /^\*\.[a-z0-9.-]+$/.test(lower)) return lower;
+    const hostname = hostnameOf(entry);
+    if (!hostname) throw new ConfigError(`MCP_OAUTH_REDIRECT_HOSTS contains an invalid host name: ${entry}`);
+    return hostname;
+  });
+  return [...new Set(hosts)];
+}
 
 /**
  * Host header allow-list for DNS-rebinding protection. A loopback bind, as behind a same-host
@@ -334,6 +375,7 @@ export function loadConfig(): AppConfig {
   const oauthHttpPath = oauthHttpPathValue ? normalizeHttpPath(oauthHttpPathValue) : undefined;
   const protectedHttpPath = oauthHttpPath ?? httpPath;
   const httpStateless = booleanEnv('MCP_HTTP_STATELESS', false);
+  const trustProxy = parseTrustProxy(optionalEnv('MCP_TRUST_PROXY'), httpHost);
   const publicBaseUrlValue = optionalEnv('MCP_PUBLIC_BASE_URL');
   const publicBaseUrl = publicBaseUrlValue ? stripTrailingSlash(publicBaseUrlValue) : undefined;
   const inboundTokenAudiences = parseList(optionalEnv('MCP_TOKEN_AUDIENCE'));
@@ -401,6 +443,11 @@ export function loadConfig(): AppConfig {
   const disabledGraphScopes = [
     ...new Set(parseList(optionalEnv('MCP_DISABLED_GRAPH_SCOPES')).map(scopeName))
   ];
+  const allowedGraphScopesValue = optionalEnv('MCP_ALLOWED_GRAPH_SCOPES');
+  const allowedGraphScopes = [...new Set(parseList(allowedGraphScopesValue).map(scopeName))];
+  if (allowedGraphScopesValue !== undefined && allowedGraphScopes.length === 0) {
+    throw new ConfigError('MCP_ALLOWED_GRAPH_SCOPES is set but lists no scopes; unset it to allow every scope.');
+  }
   const graphResilience: GraphResilienceConfig = {
     maxRetries: positiveIntegerEnv('MCP_GRAPH_MAX_RETRIES', 3),
     initialBackoffMs: positiveIntegerEnv('MCP_GRAPH_INITIAL_BACKOFF_MS', 1000),
@@ -457,6 +504,12 @@ export function loadConfig(): AppConfig {
     httpPath,
     oauthHttpPath,
     httpStateless,
+    httpSessionIdleMinutes: positiveIntegerEnv('MCP_HTTP_SESSION_IDLE_MINUTES', 480),
+    httpMaxSessions: positiveIntegerEnv('MCP_HTTP_MAX_SESSIONS', 200),
+    trustProxy,
+    rateLimitEnabled: booleanEnv('MCP_RATE_LIMIT_ENABLED', true),
+    rateLimitUserPerMinute: Math.max(1, positiveIntegerEnv('MCP_RATE_LIMIT_USER_PER_MINUTE', 600)),
+    rateLimitIpPerMinute: Math.max(1, positiveIntegerEnv('MCP_RATE_LIMIT_IP_PER_MINUTE', 120)),
     publicBaseUrl,
     publicPathPrefix,
     resourceUrl,
@@ -477,17 +530,23 @@ export function loadConfig(): AppConfig {
     oauthBridgePrompt,
     oauthBridgeCallbackDelivery,
     oauthBridgeStatePath,
+    oauthDynamicRegistration: booleanEnv('MCP_OAUTH_DYNAMIC_REGISTRATION', true),
+    oauthRedirectHosts: parseRedirectHosts(optionalEnv('MCP_OAUTH_REDIRECT_HOSTS')),
     toolExposureMode,
     toolCategories,
     directToolCategories,
     directTools,
     disabledGraphScopes,
+    allowedGraphScopes,
+    readOnly: booleanEnv('MCP_READ_ONLY', false),
     roleBasedFiltering: booleanEnv('MCP_ROLE_BASED_FILTERING', true),
     auditLogEnabled: booleanEnv('MCP_AUDIT_LOG_ENABLED', true),
     auditLogPath: resolvePath(optionalEnv('MCP_AUDIT_LOG_PATH'), '.tokens/audit'),
     sendMode: parseSendMode(),
     confirmOperations: parseList(optionalEnv('MCP_CONFIRM_OPERATIONS')).map(value => value.toLowerCase()),
     confirmTtlSeconds: Math.max(1, positiveIntegerEnv('MCP_CONFIRM_TTL_SECONDS', 300)),
+    // OBO tokens are reused only while at least 300 seconds remain, so a link must expire sooner.
+    attachmentUrlTtlSeconds: Math.min(280, Math.max(30, positiveIntegerEnv('MCP_ATTACHMENT_URL_TTL_SECONDS', 240))),
     graphResilience,
     adminToken: optionalEnv('MCP_ADMIN_TOKEN'),
     downstreamServices: parseDownstreamServices(optionalEnv('MCP_DOWNSTREAM_SERVICES')),

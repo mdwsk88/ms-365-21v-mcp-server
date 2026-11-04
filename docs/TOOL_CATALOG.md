@@ -2,9 +2,9 @@
 
 > This file is generated from the runtime registry by `npm run docs:tools`. Do not edit tool rows manually.
 
-The implementation contains **154 tools**. The current production permission boundary exposes **129 tools** and hides **25 tools** whose Graph delegated scopes are not approved. Every enabled business tool is mapped to an Entra App Role and one or more Microsoft Graph delegated permissions.
+The implementation contains **151 tools**. The current production permission boundary exposes **129 tools** and hides **22 tools** whose Graph delegated scopes are not approved. Every enabled business tool is mapped to an Entra App Role and one or more Microsoft Graph delegated permissions; an optional scope is needed only for some inputs, such as another person's mailbox.
 
-In the default `hybrid` exposure mode, clients list only the **13 tools** marked *Direct* below (read-only Teams chat, mail, calendar and file scenarios plus gateway controls). Every other authorized tool is reached through `gateway_search_tools` and `gateway_execute_tool` with the same App Role, confirmation and audit checks. Change the direct set with `MCP_DIRECT_TOOLS`.
+In the default `hybrid` exposure mode, clients list only the **14 tools** marked *Direct* below (read-only Teams chat, mail, calendar and file scenarios plus gateway controls). Every other authorized tool is reached through `gateway_search_tools` and `gateway_execute_tool` with the same App Role, confirmation and audit checks. Change the direct set with `MCP_DIRECT_TOOLS`.
 
 ## Summary
 
@@ -18,9 +18,8 @@ In the default `hybrid` exposure mode, clients list only the **13 tools** marked
 | Mail | 22 | 8 | 14 | `mcp.mail` |
 | Microsoft Search | 5 | 5 | 0 | `mcp.calendar`, `mcp.drive`, `mcp.mail`, `mcp.search`, `mcp.sharepoint`, `mcp.teams` |
 | SharePoint | 33 | 15 | 18 | `mcp.sharepoint` |
-| Smart M365 Insights | 2 | 2 | 0 | `mcp.calendar`, `mcp.mail`, `mcp.smart` |
 | Teams | 10 | 7 | 3 | `mcp.teams` |
-| Users and Profiles | 3 | 3 | 0 | `mcp.users` |
+| Users and Profiles | 5 | 5 | 0 | `mcp.users` |
 
 ## Calendar
 
@@ -39,7 +38,7 @@ In the default `hybrid` exposure mode, clients list only the **13 tools** marked
 | `calendar_list_calendars` | List My Calendars | Read | Discovery | `mcp.calendar` | `Calendars.Read` |
 | `calendar_list_event_instances` | List Recurring Event Instances | Read | Discovery | `mcp.calendar` | `Calendars.Read` |
 | `calendar_list_events` | List My Calendar Events | Read | Discovery | `mcp.calendar` | `Calendars.Read` |
-| `calendar_list_view` | List Calendar View | Read | Direct | `mcp.calendar` | `Calendars.Read` |
+| `calendar_list_view` | List Calendar View | Read | Direct | `mcp.calendar` | `Calendars.Read`; optional `Calendars.Read.Shared` |
 | `calendar_respond_to_event` | Respond To Calendar Event | Write | Discovery | `mcp.calendar` | `Calendars.ReadWrite` |
 | `calendar_update_calendar` | Rename Calendar | Write | Discovery | `mcp.calendar` | `Calendars.ReadWrite` |
 | `calendar_update_event` | Update Calendar Event | Write | Discovery | `mcp.calendar` | `Calendars.ReadWrite` |
@@ -82,7 +81,7 @@ In the default `hybrid` exposure mode, clients list only the **13 tools** marked
 | `drive_restore_version` | Restore OneDrive File Version | Write | Discovery | `mcp.drive` | `Files.ReadWrite` |
 | `drive_search_items` | Search My OneDrive | Read | Discovery | `mcp.drive` | `Files.Read` |
 | `drive_upload_small_file` | Upload Small OneDrive File | Write | Discovery | `mcp.drive` | `Files.ReadWrite` |
-| `files_get_download_url` | Get File Download URL | Read | Direct | `mcp.drive` | `Files.Read.All` |
+| `files_get_download_url` | Get File Download URL | Read | Direct | `mcp.drive` | `Files.Read.All`; optional `Files.ReadWrite` |
 | `files_search` | Search Files | Read | Direct | `mcp.drive` | `Files.Read.All`, `Sites.Read.All` |
 
 ## Gateway Controls
@@ -113,16 +112,16 @@ In the default `hybrid` exposure mode, clients list only the **13 tools** marked
 | `mail_delete_folder` | Delete Mail Folder | Write | Discovery | `mcp.mail` | `Mail.ReadWrite` |
 | `mail_delete_message` | Delete Mail | Write | Discovery | `mcp.mail` | `Mail.ReadWrite` |
 | `mail_forward` | Forward Mail | Write | Discovery | `mcp.mail` | `Mail.Send` |
-| `mail_get_attachment` | Get Mail Attachment | Read | Discovery | `mcp.mail` | `Mail.Read` |
+| `mail_get_attachment` | Get Mail Attachment | Read | Direct | `mcp.mail` | `Mail.Read`; optional `Mail.Read.Shared` |
 | `mail_get_folder` | Get Mail Folder | Read | Discovery | `mcp.mail` | `Mail.Read` |
-| `mail_get_message` | Get Mail Details | Read | Direct | `mcp.mail` | `Mail.Read` |
+| `mail_get_message` | Get Mail Details | Read | Direct | `mcp.mail` | `Mail.Read`; optional `Mail.Read.Shared` |
 | `mail_list_attachments` | List Mail Attachments | Read | Discovery | `mcp.mail` | `Mail.Read` |
 | `mail_list_child_folders` | List Child Mail Folders | Read | Discovery | `mcp.mail` | `Mail.Read` |
 | `mail_list_folders` | List Mail Folders | Read | Discovery | `mcp.mail` | `Mail.Read` |
-| `mail_list_messages` | List My Mail | Read | Direct | `mcp.mail` | `Mail.Read` |
+| `mail_list_messages` | List My Mail | Read | Direct | `mcp.mail` | `Mail.Read`; optional `Mail.Read.Shared` |
 | `mail_move_message` | Move Mail | Write | Discovery | `mcp.mail` | `Mail.ReadWrite` |
 | `mail_reply` | Reply To Mail | Write | Discovery | `mcp.mail` | `Mail.Send` |
-| `mail_search_messages` | Search My Mail | Read | Direct | `mcp.mail` | `Mail.Read` |
+| `mail_search_messages` | Search My Mail | Read | Direct | `mcp.mail` | `Mail.Read`; optional `Mail.Read.Shared` |
 | `mail_send` | Send Mail | Write | Discovery | `mcp.mail` | `Mail.Send` |
 | `mail_send_draft` | Send Mail Draft | Write | Discovery | `mcp.mail` | `Mail.Send` |
 | `mail_set_read_state` | Set Mail Read State | Write | Discovery | `mcp.mail` | `Mail.ReadWrite` |
@@ -136,7 +135,7 @@ In the default `hybrid` exposure mode, clients list only the **13 tools** marked
 | `search_files` | Search Microsoft 365 Files | Read | Discovery | `mcp.search`, `mcp.drive` | `Files.Read.All` |
 | `search_mail` | Search Microsoft 365 Mail | Read | Discovery | `mcp.search`, `mcp.mail` | `Mail.Read` |
 | `search_sharepoint` | Search SharePoint Content | Read | Discovery | `mcp.search`, `mcp.sharepoint` | `Sites.Read.All` |
-| `search_teams` | Search Teams Messages | Read | Discovery | `mcp.search`, `mcp.teams` | `Chat.Read` |
+| `search_teams` | Search Teams Messages | Read | Discovery | `mcp.search`, `mcp.teams` | `Chat.Read`; optional `ChannelMessage.Read.All` |
 
 ## SharePoint
 
@@ -176,13 +175,6 @@ In the default `hybrid` exposure mode, clients list only the **13 tools** marked
 | `sharepoint_update_list_item` | Update SharePoint List Item | Write | Discovery | `mcp.sharepoint` | `Sites.ReadWrite.All` |
 | `sharepoint_upload_small_file` | Upload Small SharePoint File | Write | Discovery | `mcp.sharepoint` | `Sites.ReadWrite.All`, `Files.ReadWrite.All` |
 
-## Smart M365 Insights
-
-| Tool | Title | Access | Listed | Required App Roles | Graph delegated scopes |
-|---|---|---|---|---|---|
-| `smart_calendar_conflicts` | Find Calendar Conflicts | Read | Discovery | `mcp.smart`, `mcp.calendar` | `Calendars.Read` |
-| `smart_mail_digest` | Build Mail Digest | Read | Discovery | `mcp.smart`, `mcp.mail` | `Mail.Read`, `User.Read` |
-
 ## Teams
 
 | Tool | Title | Access | Listed | Required App Roles | Graph delegated scopes |
@@ -204,11 +196,13 @@ In the default `hybrid` exposure mode, clients list only the **13 tools** marked
 |---|---|---|---|---|---|
 | `graph_get_me` | Get My Profile | Read | Discovery | `mcp.users` | `User.Read` |
 | `users_list` | List Organization Users | Read | Discovery | `mcp.users` | `User.ReadBasic.All` |
+| `users_list_direct_reports` | List User Direct Reports | Read | Discovery | `mcp.users` | `User.Read`, `User.ReadBasic.All` |
+| `users_list_memberships` | List User Memberships | Read | Discovery | `mcp.users` | `User.Read`; optional `User.Read.All` |
 | `users_search` | Search Organization Users | Read | Discovery | `mcp.users` | `User.ReadBasic.All` |
 
 ## Disabled Pending Tenant Approval
 
-The following **25 tools** remain implemented but are excluded from both MCP discovery and direct invocation. They become available after the corresponding delegated permissions are approved and removed from `MCP_DISABLED_GRAPH_SCOPES`.
+The following **22 tools** remain implemented but are excluded from both MCP discovery and direct invocation. They become available after the corresponding delegated permissions are approved and allowed: added to `MCP_ALLOWED_GRAPH_SCOPES` or removed from `MCP_DISABLED_GRAPH_SCOPES`.
 
 | Tool | Module | Graph delegated scopes |
 |---|---|---|
@@ -216,7 +210,6 @@ The following **25 tools** remain implemented but are excluded from both MCP dis
 | `groups_list` | Groups | `GroupMember.Read.All` |
 | `groups_list_members` | Groups | `GroupMember.Read.All` |
 | `groups_list_owners` | Groups | `GroupMember.Read.All` |
-| `smart_teams_unread` | Smart M365 Insights | `Team.ReadBasic.All`, `Channel.ReadBasic.All`, `ChannelMessage.Read.All`, `Chat.Read` |
 | `teams_add_channel_member` | Teams | `ChannelMember.ReadWrite.All` |
 | `teams_add_chat_member` | Teams | `ChatMember.ReadWrite` |
 | `teams_add_team_member` | Teams | `TeamMember.ReadWrite.All` |
@@ -235,8 +228,6 @@ The following **25 tools** remain implemented but are excluded from both MCP dis
 | `teams_update_channel` | Teams | `ChannelSettings.ReadWrite.All` |
 | `users_get_manager` | Users and Profiles | `User.Read.All` |
 | `users_get_profile` | Users and Profiles | `User.Read.All` |
-| `users_list_direct_reports` | Users and Profiles | `User.Read.All` |
-| `users_list_memberships` | Users and Profiles | `User.Read.All` |
 
 ## Coverage Boundary
 

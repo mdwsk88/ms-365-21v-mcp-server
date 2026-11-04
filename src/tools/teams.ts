@@ -18,10 +18,8 @@ import {
   softDeleteChatMessage,
   updateTeamChannel
 } from '../graph-extended.js';
-import { listChatMessagesWindow, listChatsOverview } from '../graph-scenarios.js';
+import { listChannelMessagesOverview, listChatMessagesWindow, listChatsOverview } from '../graph-scenarios.js';
 import {
-  listChannelMessageReplies,
-  listChannelMessages,
   listMyJoinedTeams,
   listTeamChannels,
   replyToChannelMessage,
@@ -307,16 +305,19 @@ export const teamsModule: ToolModule = {
       {
         title: 'List Teams Channel Messages',
         description: describeTool(
-          'List recent messages in a Teams channel. Requires delegated ChannelMessage.Read.All and usually tenant admin consent.',
+          'List recent posts in a Teams channel as plain text with author, time, subject, mentions and attachments; read the replies of a post with teams_list_channel_message_replies. Requires delegated ChannelMessage.Read.All, which needs admin consent.',
           ['查看Teams频道消息', '读取频道聊天记录', '查看团队频道最近消息']
         ),
         inputSchema: {
           teamId: z.string().min(1).max(200).describe('Teams team ID.'),
           channelId: z.string().min(1).max(300).describe('Teams channel ID, usually from teams_list_channels.'),
-          top: z.number().int().min(1).max(50).optional().describe('Number of messages to return, from 1 to 50.')
-        }
+          top: z.number().int().min(1).max(50).optional().describe('Posts to return, from 1 to 50. Defaults to 20.'),
+          cursor: z.string().max(4000).optional().describe('nextCursor from the previous call.')
+        },
+        annotations: { readOnlyHint: true, openWorldHint: true }
       },
-      async ({ teamId, channelId, top }) => runTool(async () => listChannelMessages(config, teamId, channelId, top))
+      async ({ teamId, channelId, top, cursor }) =>
+        runTool(async () => listChannelMessagesOverview(config, { teamId, channelId, top, cursor }))
     );
 
     server.registerTool(
@@ -324,18 +325,20 @@ export const teamsModule: ToolModule = {
       {
         title: 'List Teams Channel Message Replies',
         description: describeTool(
-          'List replies under a Teams channel message. Requires delegated ChannelMessage.Read.All and usually tenant admin consent.',
+          'List the replies under a Teams channel post as plain text, in the same shape as channel posts. Requires delegated ChannelMessage.Read.All, which needs admin consent.',
           ['查看Teams频道消息回复', '查看线程回复', '读取频道消息评论']
         ),
         inputSchema: {
           teamId: z.string().min(1).max(200).describe('Teams team ID.'),
           channelId: z.string().min(1).max(300).describe('Teams channel ID.'),
-          messageId: z.string().min(1).max(300).describe('Channel message ID.'),
-          top: z.number().int().min(1).max(50).optional().describe('Number of replies to return, from 1 to 50.')
-        }
+          messageId: z.string().min(1).max(300).describe('Channel post ID.'),
+          top: z.number().int().min(1).max(50).optional().describe('Replies to return, from 1 to 50. Defaults to 20.'),
+          cursor: z.string().max(4000).optional().describe('nextCursor from the previous call.')
+        },
+        annotations: { readOnlyHint: true, openWorldHint: true }
       },
-      async ({ teamId, channelId, messageId, top }) =>
-        runTool(async () => listChannelMessageReplies(config, teamId, channelId, messageId, top))
+      async ({ teamId, channelId, messageId, top, cursor }) =>
+        runTool(async () => listChannelMessagesOverview(config, { teamId, channelId, messageId, top, cursor }))
     );
 
     server.registerTool(

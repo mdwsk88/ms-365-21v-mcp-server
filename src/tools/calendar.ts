@@ -70,8 +70,8 @@ export const calendarModule: ToolModule = {
       {
         title: 'List Calendar View',
         description: describeTool(
-          'List meetings and events, including recurring instances, in a date-time range: subject, time, location, organizer, my response, attendees and cancellation state. Requires delegated Calendars.Read.',
-          ['查看今天的会议', '按时间范围查看日历', '查看明天日程', '查看本周会议', '展开重复日程']
+          'List meetings and events, including recurring instances, in a date-time range: subject, time, location, organizer, my response, attendees and cancellation state. Overlapping meetings are flagged with overlapsWith and counted in conflictCount. calendarOwner reads a calendar shared with or delegated to you. For free time across people, use calendar_get_schedule. Requires delegated Calendars.Read.',
+          ['查看今天的会议', '按时间范围查看日历', '查看明天日程', '查看本周会议', '检查会议冲突', '展开重复日程', '查看别人共享的日历']
         ),
         inputSchema: {
           startDateTime: z
@@ -81,17 +81,32 @@ export const calendarModule: ToolModule = {
             .describe('Range start, ISO 8601 date or date-time. Without an offset, China Standard Time is assumed.'),
           endDateTime: z.string().min(1).max(80).describe('Range end, ISO 8601 date or date-time.'),
           top: z.number().int().min(1).max(100).optional().describe('Maximum events to return. Defaults to 50.'),
-          timeZone: z.string().min(1).max(80).optional().describe('Time zone for returned times. Defaults to China Standard Time.')
+          timeZone: z.string().min(1).max(80).optional().describe('Time zone for returned times. Defaults to China Standard Time.'),
+          calendarOwner: z
+            .string()
+            .min(1)
+            .max(320)
+            .optional()
+            .describe(
+              "Read another person's calendar that is shared with or delegated to you, by email address or user ID. Needs delegated Calendars.Read.Shared."
+            ),
+          cursor: z
+            .string()
+            .max(4000)
+            .optional()
+            .describe('nextCursor from the previous call; the time range then comes from the cursor.')
         },
         annotations: { readOnlyHint: true, openWorldHint: true }
       },
-      async ({ startDateTime, endDateTime, top, timeZone }) =>
+      async ({ startDateTime, endDateTime, top, timeZone, calendarOwner, cursor }) =>
         runTool(async () =>
           listCalendarOverview(config, {
             startDateTime: toUtcInstant(startDateTime, 'startDateTime') ?? startDateTime,
             endDateTime: toUtcInstant(endDateTime, 'endDateTime') ?? endDateTime,
             top,
-            timeZone
+            timeZone,
+            calendarOwner,
+            cursor
           })
         )
     );

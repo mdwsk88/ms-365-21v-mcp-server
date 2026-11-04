@@ -1,6 +1,7 @@
 import type { AppConfig } from './config.js';
 import { getGraphResilience } from './graph-resilience.js';
 import { getGraphAccessToken } from './oauth.js';
+import { requestableGraphScope } from './scope-policy.js';
 
 export class GraphHttpError extends Error {
   readonly status: number;
@@ -78,9 +79,15 @@ function resolveGraphUrl(config: AppConfig, pathOrUrl: string, query?: Record<st
 }
 
 function graphScopes(config: AppConfig, scopeNames: string[]): string[] {
-  return scopeNames.map(scope =>
-    scope.startsWith('https://') || scope.startsWith('api://') ? scope : `${config.graphResource}/${scope}`
-  );
+  return scopeNames.map(scopeName => {
+    const scope = requestableGraphScope(config, scopeName);
+    return scope.startsWith('https://') || scope.startsWith('api://') ? scope : `${config.graphResource}/${scope}`;
+  });
+}
+
+/** A Microsoft Graph access token for the signed-in user (OBO in HTTP mode) carrying the given scopes. */
+export async function graphAccessTokenForScopes(config: AppConfig, scopeNames: string[]): Promise<string> {
+  return getGraphAccessToken(config, graphScopes(config, scopeNames));
 }
 
 export async function graphRequest(
@@ -298,19 +305,6 @@ export async function getUser(config: AppConfig, userIdOrPrincipalName: string):
       $select: 'id,displayName,userPrincipalName,mail,jobTitle,department,officeLocation,mobilePhone,businessPhones'
     },
     scopes: ['User.Read.All']
-  });
-}
-
-export async function listMyMessagesSince(config: AppConfig, since: Date, top = 50): Promise<unknown> {
-  return graphRequest(config, 'GET', '/me/messages', {
-    query: {
-      $top: clampTop(top, 50, 50),
-      $select:
-        'id,subject,from,receivedDateTime,webLink,isRead,importance,hasAttachments,flag',
-      $orderby: 'receivedDateTime desc',
-      $filter: `receivedDateTime ge ${since.toISOString()}`
-    },
-    scopes: ['Mail.Read']
   });
 }
 
@@ -876,38 +870,6 @@ export async function listTeamChannels(config: AppConfig, teamId: string): Promi
   });
 }
 
-export async function listChannelMessages(
-  config: AppConfig,
-  teamId: string,
-  channelId: string,
-  top?: number
-): Promise<unknown> {
-  return graphRequest(config, 'GET', `/teams/${pathSegment(teamId)}/channels/${pathSegment(channelId)}/messages`, {
-    query: {
-      $top: clampTop(top, 10, 50)
-    },
-    scopes: ['ChannelMessage.Read.All']
-  });
-}
-
-export async function listChannelMessageReplies(
-  config: AppConfig,
-  teamId: string,
-  channelId: string,
-  messageId: string,
-  top?: number
-): Promise<unknown> {
-  return graphRequest(
-    config,
-    'GET',
-    `/teams/${pathSegment(teamId)}/channels/${pathSegment(channelId)}/messages/${pathSegment(messageId)}/replies`,
-    {
-      query: { $top: clampTop(top, 10, 50) },
-      scopes: ['ChannelMessage.Read.All']
-    }
-  );
-}
-
 export async function sendChannelMessage(
   config: AppConfig,
   teamId: string,
@@ -942,25 +904,6 @@ export async function replyToChannelMessage(
       scopes: ['ChannelMessage.Send']
     }
   );
-}
-
-export async function listMyChats(config: AppConfig, top?: number): Promise<unknown> {
-  return graphRequest(config, 'GET', '/me/chats', {
-    query: {
-      $top: clampTop(top, 20, 50),
-      $select: 'id,topic,chatType,createdDateTime,lastUpdatedDateTime,webUrl'
-    },
-    scopes: ['Chat.Read']
-  });
-}
-
-export async function listChatMessages(config: AppConfig, chatId: string, top?: number): Promise<unknown> {
-  return graphRequest(config, 'GET', `/chats/${pathSegment(chatId)}/messages`, {
-    query: {
-      $top: clampTop(top, 10, 50)
-    },
-    scopes: ['Chat.Read']
-  });
 }
 
 export async function sendChatMessage(

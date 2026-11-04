@@ -62,8 +62,19 @@ export function htmlToText(html: string): string {
   return normalizeText(decodeHtmlEntities(text));
 }
 
+const invisibleCharacters =
+  /[­͏ᅟᅠ឴឵᠎​‎‏‪-‮⁠-⁤⁦-⁯ㅤ﻿ﾠ]/g;
+// Zero-width joiners belong inside emoji and some scripts; next to spaces or each other they are padding.
+const strayJoiners = /(?<=^|[\s‌‍])[‌‍]+|[‌‍]+(?=\s|$)/gm;
+const spaceLikeCharacters = /[  -   ]/g;
+
+/** Removes zero-width, bidi-control and padding characters, such as the preview padding of marketing mail. */
+export function removeInvisibleCharacters(value: string): string {
+  return value.replace(invisibleCharacters, '').replace(strayJoiners, '').replace(spaceLikeCharacters, ' ');
+}
+
 export function normalizeText(value: string): string {
-  return value
+  return removeInvisibleCharacters(value)
     .replace(/\r\n?/g, '\n')
     .replace(/[\t\f\v ]+/g, ' ')
     .split('\n')
@@ -71,6 +82,137 @@ export function normalizeText(value: string): string {
     .join('\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+}
+
+/** Text file content: unifies line endings and drops a byte-order mark, but keeps tabs and indentation. */
+export function fileText(value: string): string {
+  return value.replace(/^﻿/, '').replace(/\r\n?/g, '\n');
+}
+
+// Mail bodies
+
+const linkCharacters = String.raw`[\w\-.~:/?#\[\]@!$&'()*+,;=%]`;
+const linkPattern = new RegExp(String.raw`(<)?(https?://${linkCharacters}+)(>)?`, 'gi');
+const trailingLink = new RegExp(String.raw`https?://${linkCharacters}+$`, 'i');
+const safeLinksHost = /(^|\.)safelinks\.protection\.[a-z0-9.-]+$/i;
+const trackingParameter = /^(utm_\w+|mc_[ce]id|fbclid|gclid|dclid|gbraid|wbraid|msclkid|yclid|igshid|_hsenc|_hsmi|mkt_tok|_ga|_gl)$/i;
+// Links to Microsoft 365 content are kept whole however long: the agent may need to open them.
+const workLinkHost =
+  /(^|\.)(sharepoint\.(com|cn)|microsoftonline\.cn|teams\.microsoft\.com|teams\.live\.com|office\.com|office365\.cn|onedrive\.live\.com|1drv\.ms)$/i;
+const longLinkChars = 500;
+// How far back to look for the text before a link: enough for any link worth comparing, and it keeps
+// the cleanup linear in the body length.
+const lookBehindChars = 2100;
+
+function decodeComponent(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+/**
+ * Unwraps Microsoft Defender Safe Links (any cloud, including 21Vianet) and removes marketing
+ * tracking parameters. Links that need neither come back exactly as written.
+ */
+export function cleanUrl(raw: string): string {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return raw;
+  }
+  let changed = false;
+  for (let depth = 0; depth < 3 && safeLinksHost.test(url.hostname); depth += 1) {
+    const target = url.searchParams.get('url');
+    if (!target || !/^https?:\/\//i.test(target)) break;
+    try {
+      url = new URL(target);
+    } catch {
+      break;
+    }
+    changed = true;
+  }
+  if (url.search) {
+    const pairs = url.search.slice(1).split('&');
+    const kept = pairs.filter(pair => !trackingParameter.test(decodeComponent(pair.split('=')[0] ?? '')));
+    if (kept.length !== pairs.length) {
+      url.search = kept.join('&');
+      changed = true;
+    }
+  }
+  return changed ? url.href : raw;
+}
+
+function comparableUrl(value: string): string {
+  try {
+    return new URL(value).href.replace(/\/$/, '');
+  } catch {
+    return value.replace(/\/$/, '');
+  }
+}
+
+function count(value: string, character: string): number {
+  return value.split(character).length - 1;
+}
+
+/** Splits sentence punctuation and unbalanced closing brackets off the end of a matched link. */
+function splitTrailingPunctuation(link: string): [string, string] {
+  let end = link.length;
+  while (end > 0) {
+    const last = link[end - 1];
+    const head = link.slice(0, end);
+    if (".,;:!?'*".includes(last)) end -= 1;
+    else if (last === ')' && count(head, '(') < count(head, ')')) end -= 1;
+    else if (last === ']' && count(head, '[') < count(head, ']')) end -= 1;
+    else break;
+  }
+  return [link.slice(0, end), link.slice(end)];
+}
+
+/**
+ * Makes a plain-text mail body cheaper to read without changing its meaning: unwraps Safe Links,
+ * drops tracking parameters and repeated link targets, turns inline image references into [image],
+ * and replaces links longer than 500 characters, other than Microsoft 365 links, with [link: host].
+ */
+export function cleanMailText(value: string): { text: string; linksOmitted: number } {
+  let linksOmitted = 0;
+  const shortened = (link: string): string | undefined => {
+    if (link.length <= longLinkChars) return undefined;
+    let host: string;
+    try {
+      host = new URL(link).hostname;
+    } catch {
+      return undefined;
+    }
+    if (workLinkHost.test(host)) return undefined;
+    linksOmitted += 1;
+    return `[link: ${host}]`;
+  };
+
+  const cleaned = value
+    .replace(/\[cid:[^\]\s]*\]/gi, '[image]')
+    .replace(/<mailto:([^>\s?]+)(?:\?[^>\s]*)?>/gi, (_match, address: string, offset: number, whole: string) => {
+      const before = whole.slice(Math.max(0, offset - lookBehindChars), offset);
+      if (before.trimEnd().toLowerCase().endsWith(decodeComponent(address).toLowerCase())) return '';
+      return `${/\s$/.test(before) || !before ? '' : ' '}<${decodeComponent(address)}>`;
+    })
+    .replace(linkPattern, (_match, open: string | undefined, link: string, close: string | undefined, offset: number, whole: string) => {
+      const before = whole.slice(Math.max(0, offset - lookBehindChars), offset);
+      if (open && close) {
+        // Outlook renders a hyperlink as "text<target>"; when the text is the same link, keep one copy.
+        const target = cleanUrl(link);
+        const shown = before.match(trailingLink)?.[0];
+        if (shown && comparableUrl(cleanUrl(splitTrailingPunctuation(shown)[0])) === comparableUrl(target)) return '';
+        const short = shortened(target);
+        return short ? `${/\s$/.test(before) || !before ? '' : ' '}${short}` : `<${target}>`;
+      }
+      const [core, trailing] = splitTrailingPunctuation(link);
+      const target = cleanUrl(core);
+      return `${open ?? ''}${shortened(target) ?? target}${trailing}${close ?? ''}`;
+    });
+  return { text: normalizeText(cleaned), linksOmitted };
 }
 
 export function truncateText(value: string, maxChars: number): { text: string; truncated: boolean } {

@@ -74,14 +74,6 @@
     },
     {
       "allowedMemberTypes": ["User"],
-      "description": "Use smart aggregation tools together with the corresponding mail, calendar, or Teams role.",
-      "displayName": "MCP Smart Insights",
-      "id": "f3ca9f1b-451d-432f-8a42-371e0b79833c",
-      "isEnabled": true,
-      "value": "mcp.smart"
-    },
-    {
-      "allowedMemberTypes": ["User"],
       "description": "Use every module loaded by the MCP Gateway, including administrative debug tools.",
       "displayName": "MCP Gateway Administrator",
       "id": "af291793-0ca8-45ac-a1b7-673cf242cb68",

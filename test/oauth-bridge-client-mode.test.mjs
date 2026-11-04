@@ -123,13 +123,13 @@ test('tool exposure mode and direct fast lane lists are parsed strictly', () => 
     {
       ...common,
       MCP_TOOL_EXPOSURE_MODE: 'hybrid',
-      MCP_DIRECT_TOOL_CATEGORIES: 'smart, mail',
+      MCP_DIRECT_TOOL_CATEGORIES: 'calendar, mail',
       MCP_DIRECT_TOOLS: 'graph_get_me,calendar_list_events'
     },
     () => {
       const config = loadConfig();
       assert.equal(config.toolExposureMode, 'hybrid');
-      assert.deepEqual(config.directToolCategories, ['smart', 'mail']);
+      assert.deepEqual(config.directToolCategories, ['calendar', 'mail']);
       assert.deepEqual(config.directTools, ['graph_get_me', 'calendar_list_events']);
     }
   );

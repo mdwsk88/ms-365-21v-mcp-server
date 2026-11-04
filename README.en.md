@@ -47,11 +47,11 @@ The default image is `ghcr.io/mdwsk88/ms-365-21v-mcp-server:v0.2.0`, for Linux a
 | Ask your client | Required capability |
 |---|---|
 | List my five latest emails, showing only subject and sender | Mail read |
-| Check tomorrow's calendar for overlapping meetings | Calendar + Smart |
+| Check tomorrow's calendar for overlapping meetings | Calendar |
 | Find the project plan in my OneDrive | OneDrive read |
 | Prepare an email reply and ask before sending | Mail write + confirmation |
 
-Modules include mail, calendar, OneDrive, SharePoint, Teams, contacts, users, Microsoft Search and aggregation tools. Availability depends on tenant consent, App Roles, configured filters and 21V API support. See the [scope-to-tool mapping](docs/TOOL_CATALOG.md).
+Modules include mail, calendar, OneDrive, SharePoint, Teams, contacts, users and Microsoft Search. Availability depends on tenant consent, App Roles, configured filters and 21V API support. See the [scope-to-tool mapping](docs/TOOL_CATALOG.md).
 
 ## Diagnostics and trust
 

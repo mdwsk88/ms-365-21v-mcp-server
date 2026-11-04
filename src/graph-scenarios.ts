@@ -1,7 +1,9 @@
+import { attachmentLinkStore, attachmentLinkUrl, attachmentLinksAvailable } from './attachment-links.js';
 import type { AppConfig } from './config.js';
-import { GraphHttpError, graphRequest, listMessageAttachments, type QueryValue } from './graph.js';
+import { GraphHttpError, graphAccessTokenForScopes, graphRequest, type QueryValue } from './graph.js';
 import { getRequestContext } from './request-context.js';
-import { htmlToText, normalizeText, preview, truncateText } from './text.js';
+import { requireGraphScope } from './scope-policy.js';
+import { cleanMailText, fileText, htmlToText, normalizeText, preview, truncateText } from './text.js';
 
 // High-frequency read scenarios: Teams chats, mail, calendar and files.
 // Each function returns compact, model-oriented records instead of raw Graph payloads.
@@ -80,6 +82,20 @@ export function cursorPath(config: AppConfig, cursor: string, allowed: RegExp): 
     throw new Error('cursor belongs to a different resource; call this tool without cursor first.');
   }
   return url.toString();
+}
+
+/** Whose mailbox or calendar a cursor reads: the /users/{owner} segment, or undefined for /me. */
+function cursorOwner(config: AppConfig, cursor: string): string | undefined {
+  const basePath = new URL(config.graphBaseUrl).pathname;
+  const relative = decodeURIComponent(new URL(cursor).pathname.slice(basePath.length));
+  return relative.match(/^\/users\/([^/]+)\//)?.[1];
+}
+
+function isCurrentUser(value: string): boolean {
+  const lower = value.toLowerCase();
+  if (lower === 'me') return true;
+  const me = currentUser();
+  return lower === me.email || lower === me.id?.toLowerCase();
 }
 
 function nextLink(response: unknown): string | undefined {
@@ -323,7 +339,101 @@ export async function listChatMessagesWindow(
   };
 }
 
+const channelMessagesPattern = /^\/teams\/[^/]+\/channels\/[^/]+\/messages(\/[^/]+\/replies)?$/;
+
+/**
+ * Root posts of a Teams channel, or the replies under one post, in the same compact shape as chat
+ * messages. Needs ChannelMessage.Read.All, which requires admin consent.
+ */
+export async function listChannelMessagesOverview(
+  config: AppConfig,
+  input: { teamId: string; channelId: string; messageId?: string; top?: number; cursor?: string; format?: 'text' | 'html' }
+) {
+  const channelPath = `/teams/${segment(input.teamId)}/channels/${segment(input.channelId)}/messages`;
+  const path = input.cursor
+    ? cursorPath(config, input.cursor, channelMessagesPattern)
+    : input.messageId
+      ? `${channelPath}/${segment(input.messageId)}/replies`
+      : channelPath;
+  const response = await graphRequest(config, 'GET', path, {
+    query: input.cursor ? undefined : { $top: clamp(input.top, 20, 1, 50) },
+    scopes: ['ChannelMessage.Read.All']
+  });
+  const me = currentUser();
+  const format = input.format ?? 'text';
+  const messages = records(record(response).value)
+    .filter(message => !text(message.deletedDateTime))
+    .sort((left, right) => (text(left.createdDateTime) ?? '').localeCompare(text(right.createdDateTime) ?? ''))
+    .map(message => ({
+      ...shapeChatMessage(message, me, format, 4000),
+      subject: text(message.subject),
+      webLink: text(message.webUrl)
+    }));
+  return {
+    teamId: input.teamId,
+    channelId: input.channelId,
+    messageId: input.messageId,
+    count: messages.length,
+    order: 'oldest first within this page',
+    messages,
+    nextCursor: nextLink(response)
+  };
+}
+
+/**
+ * Microsoft Search over Teams messages the user can see. Each hit names the chat, or the team and
+ * channel, so the conversation can be read next with teams_list_chat_messages or
+ * teams_list_channel_messages. Channel hits need ChannelMessage.Read.All as well as Chat.Read.
+ */
+export async function searchTeamsMessages(config: AppConfig, input: { query: string; from?: number; size?: number }) {
+  const from = clamp(input.from, 0, 0, 1000);
+  const size = clamp(input.size, 20, 1, 50);
+  const response = await graphRequest(config, 'POST', '/search/query', {
+    body: { requests: [{ entityTypes: ['chatMessage'], query: { queryString: input.query }, from, size }] },
+    scopes: ['Chat.Read']
+  });
+  const container = record(records(record(records(record(response).value)[0]).hitsContainers)[0]);
+  const messages = records(container.hits).map(hit => {
+    const resource = record(hit.resource);
+    const channel = record(resource.channelIdentity);
+    const sender = record(resource.from);
+    const summary = text(hit.summary)?.replace(/<\/?c\d+>/g, '').replace(/<ddd\/>/g, '…');
+    return {
+      id: text(resource.id),
+      chatId: text(resource.chatId),
+      teamId: text(channel.teamId),
+      channelId: text(channel.channelId),
+      from: text(record(sender.emailAddress).name) ?? text(record(sender.user).displayName),
+      at: text(resource.createdDateTime),
+      subject: text(resource.subject),
+      summary: summary ? preview(htmlToText(summary), 300) : undefined,
+      webLink: text(resource.webLink) ?? text(resource.webUrl)
+    };
+  });
+  return {
+    query: input.query,
+    total: typeof container.total === 'number' ? container.total : undefined,
+    count: messages.length,
+    messages,
+    nextFrom: container.moreResultsAvailable === true ? from + messages.length : undefined
+  };
+}
+
 // Mail
+
+/**
+ * The mailbox a mail call reads: the signed-in user's own, or a shared mailbox the user can open,
+ * which needs the Mail.Read.Shared delegated permission.
+ */
+export function mailboxBase(
+  config: Pick<AppConfig, 'disabledGraphScopes' | 'allowedGraphScopes'>,
+  mailbox: string | undefined
+): { base: string; scope: 'Mail.Read' | 'Mail.Read.Shared'; mailbox?: string } {
+  const value = mailbox?.trim();
+  if (!value || isCurrentUser(value)) return { base: '/me', scope: 'Mail.Read' };
+  requireGraphScope(config, 'Mail.Read.Shared', 'Reading a shared mailbox');
+  return { base: `/users/${segment(value)}`, scope: 'Mail.Read.Shared', mailbox: value };
+}
 
 const mailListSelect =
   'id,subject,from,toRecipients,ccRecipients,receivedDateTime,bodyPreview,isRead,importance,hasAttachments,flag,conversationId,webLink';
@@ -349,7 +459,7 @@ export function shapeMailRow(message: JsonRecord, me: CurrentUser) {
     ccCount: cc.length || undefined,
     myRole,
     receivedAt: text(message.receivedDateTime),
-    preview: preview(text(message.bodyPreview), 300),
+    preview: preview(cleanMailText(text(message.bodyPreview) ?? '').text, 300),
     isRead: message.isRead === true,
     flagged: text(flag.flagStatus) === 'flagged' ? true : undefined,
     flagDue: text(record(flag.dueDateTime).dateTime),
@@ -360,12 +470,18 @@ export function shapeMailRow(message: JsonRecord, me: CurrentUser) {
   };
 }
 
-function mailFolderPath(folder: string | undefined): string {
+function mailFolderPath(base: string, folder: string | undefined): string {
   const value = folder?.trim() || 'inbox';
-  return value.toLowerCase() === 'all' ? '/me/messages' : `/me/mailFolders/${segment(value)}/messages`;
+  return value.toLowerCase() === 'all' ? `${base}/messages` : `${base}/mailFolders/${segment(value)}/messages`;
 }
 
-const mailCursorPattern = /^\/me\/(messages|mailFolders\/[^/]+\/messages)$/;
+const mailCursorPattern = /^\/(me|users\/[^/]+)\/(messages|mailFolders\/[^/]+\/messages)$/;
+
+async function followMailCursor(config: AppConfig, cursor: string) {
+  const url = cursorPath(config, cursor, mailCursorPattern);
+  const { scope, mailbox } = mailboxBase(config, cursorOwner(config, url));
+  return { response: await graphRequest(config, 'GET', url, { scopes: [scope] }), mailbox };
+}
 
 export function mailListFilter(input: {
   since?: string;
@@ -397,6 +513,7 @@ export async function listMailOverview(
     flaggedOnly?: boolean;
     from?: string;
     importance?: 'low' | 'normal' | 'high';
+    mailbox?: string;
     cursor?: string;
   }
 ) {
@@ -406,72 +523,94 @@ export async function listMailOverview(
   if (input.from && !input.from.includes('@')) {
     throw new Error('from must be an email address. To find mail by a person name, use mail_search_messages with "from:<name>".');
   }
-  const response = input.cursor
-    ? await graphRequest(config, 'GET', cursorPath(config, input.cursor, mailCursorPattern), { scopes: ['Mail.Read'] })
-    : await graphRequest(config, 'GET', mailFolderPath(input.folder), {
-        query: {
-          $top: top,
-          $select: mailListSelect,
-          $orderby: 'receivedDateTime desc',
-          $filter: mailListFilter({ ...input, since, until })
-        },
-        scopes: ['Mail.Read']
-      });
+  let response: unknown;
+  let mailbox: string | undefined;
+  if (input.cursor) {
+    ({ response, mailbox } = await followMailCursor(config, input.cursor));
+  } else {
+    const target = mailboxBase(config, input.mailbox);
+    mailbox = target.mailbox;
+    response = await graphRequest(config, 'GET', mailFolderPath(target.base, input.folder), {
+      query: {
+        $top: top,
+        $select: mailListSelect,
+        $orderby: 'receivedDateTime desc',
+        $filter: mailListFilter({ ...input, since, until })
+      },
+      scopes: [target.scope]
+    });
+  }
   const me = currentUser();
   const messages = records(record(response).value).map(message => shapeMailRow(message, me));
-  return { folder: input.folder?.trim() || 'inbox', count: messages.length, messages, nextCursor: nextLink(response) };
+  return {
+    mailbox,
+    folder: input.folder?.trim() || 'inbox',
+    count: messages.length,
+    messages,
+    nextCursor: nextLink(response)
+  };
 }
 
 export async function searchMailOverview(
   config: AppConfig,
-  input: { query: string; top?: number; folder?: string; cursor?: string }
+  input: { query: string; top?: number; folder?: string; mailbox?: string; cursor?: string }
 ) {
   const top = clamp(input.top, 20, 1, 50);
-  const response = input.cursor
-    ? await graphRequest(config, 'GET', cursorPath(config, input.cursor, mailCursorPattern), { scopes: ['Mail.Read'] })
-    : await graphRequest(config, 'GET', mailFolderPath(input.folder?.trim() || 'all'), {
-        query: {
-          $search: `"${input.query.replace(/"/g, '\\"')}"`,
-          $top: top,
-          $select: mailListSelect
-        },
-        scopes: ['Mail.Read']
-      });
+  let response: unknown;
+  let mailbox: string | undefined;
+  if (input.cursor) {
+    ({ response, mailbox } = await followMailCursor(config, input.cursor));
+  } else {
+    const target = mailboxBase(config, input.mailbox);
+    mailbox = target.mailbox;
+    response = await graphRequest(config, 'GET', mailFolderPath(target.base, input.folder?.trim() || 'all'), {
+      query: {
+        $search: `"${input.query.replace(/"/g, '\\"')}"`,
+        $top: top,
+        $select: mailListSelect
+      },
+      scopes: [target.scope]
+    });
+  }
   const me = currentUser();
   const messages = records(record(response).value).map(message => shapeMailRow(message, me));
-  return { query: input.query, count: messages.length, messages, nextCursor: nextLink(response) };
+  return { mailbox, query: input.query, count: messages.length, messages, nextCursor: nextLink(response) };
 }
 
-export async function readMailMessage(
-  config: AppConfig,
-  input: {
-    messageId: string;
-    bodyFormat?: 'text' | 'html';
-    onlyNewContent?: boolean;
-    maxChars?: number;
-    offset?: number;
-    includeAttachments?: boolean;
-  }
-) {
+type ReadMailOptions = {
+  bodyFormat?: 'text' | 'html';
+  onlyNewContent?: boolean;
+  maxChars?: number;
+  offset?: number;
+  includeAttachments?: boolean;
+  clean?: boolean;
+  mailbox?: string;
+};
+
+export async function readMailMessage(config: AppConfig, input: ReadMailOptions & { messageId: string }) {
   const bodyFormat = input.bodyFormat ?? 'text';
   const bodyField = input.onlyNewContent ? 'uniqueBody' : 'body';
+  const { base, scope, mailbox } = mailboxBase(config, input.mailbox);
+  const messagePath = `${base}/messages/${segment(input.messageId)}`;
   const message = record(
-    await graphRequest(config, 'GET', `/me/messages/${segment(input.messageId)}`, {
+    await graphRequest(config, 'GET', messagePath, {
       query: {
         $select: `id,subject,from,toRecipients,ccRecipients,bccRecipients,receivedDateTime,sentDateTime,importance,isRead,flag,hasAttachments,conversationId,webLink,${bodyField}`
       },
       prefer: bodyFormat === 'text' ? 'outlook.body-content-type="text"' : undefined,
-      scopes: ['Mail.Read']
+      scopes: [scope]
     })
   );
   const body = record(message[bodyField]);
   const rawBody = text(body.content) ?? '';
-  const fullText =
+  const plainText =
     bodyFormat === 'html'
-      ? rawBody
+      ? undefined
       : text(body.contentType)?.toLowerCase() === 'html'
         ? htmlToText(rawBody)
         : normalizeText(rawBody);
+  const cleaned = plainText !== undefined && input.clean !== false ? cleanMailText(plainText) : undefined;
+  const fullText = cleaned?.text ?? plainText ?? rawBody;
   const characters = Array.from(fullText);
   const maxChars = clamp(input.maxChars, 20000, 200, 100000);
   const offset = clamp(input.offset, 0, 0, Math.max(0, characters.length));
@@ -480,7 +619,14 @@ export async function readMailMessage(
 
   const attachments =
     input.includeAttachments !== false && message.hasAttachments === true
-      ? records(record(await listMessageAttachments(config, input.messageId)).value).map(attachment => ({
+      ? records(
+          record(
+            await graphRequest(config, 'GET', `${messagePath}/attachments`, {
+              query: { $select: 'id,name,contentType,size,isInline,lastModifiedDateTime' },
+              scopes: [scope]
+            })
+          ).value
+        ).map(attachment => ({
           id: text(attachment.id),
           name: text(attachment.name),
           contentType: text(attachment.contentType),
@@ -492,6 +638,7 @@ export async function readMailMessage(
   const me = currentUser();
   const row = shapeMailRow(message, me);
   return {
+    mailbox,
     id: row.id,
     subject: row.subject,
     from: row.from,
@@ -513,12 +660,63 @@ export async function readMailMessage(
       text: slice,
       offset,
       totalChars: characters.length,
-      nextOffset: end < characters.length ? end : undefined
+      nextOffset: end < characters.length ? end : undefined,
+      linksOmitted: cleaned?.linksOmitted || undefined
     },
     attachments,
     attachmentNote: attachments?.length
-      ? 'Use mail_get_attachment through gateway_execute_tool to read attachment bytes.'
+      ? 'Call mail_get_attachment with an attachment id to read small text attachments inline or get a single-use download URL.'
       : undefined
+  };
+}
+
+const maxBatchMessages = 10;
+const batchConcurrency = 4;
+
+async function mapWithConcurrency<T, R>(items: T[], limit: number, map: (item: T) => Promise<R>): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const index = next;
+      next += 1;
+      results[index] = await map(items[index] as T);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+
+function itemError(error: unknown) {
+  if (error instanceof GraphHttpError) {
+    const graphError = record(record(error.responseBody).error);
+    return { status: error.status, code: text(graphError.code), message: text(graphError.message) ?? error.message };
+  }
+  const code = error && typeof error === 'object' && 'code' in error ? text((error as { code?: unknown }).code) : undefined;
+  return { code, message: error instanceof Error ? error.message : String(error) };
+}
+
+/**
+ * Reads several messages in one call, a few at a time. Each body starts at offset 0 and is capped at
+ * maxChars (8000 by default); a message that fails is returned with its error instead of failing the batch.
+ */
+export async function readMailMessages(config: AppConfig, input: ReadMailOptions & { messageIds: string[] }) {
+  const ids = [...new Set(input.messageIds.map(id => id.trim()).filter(Boolean))];
+  if (!ids.length) throw new Error('messageIds must list at least one message ID.');
+  if (ids.length > maxBatchMessages) throw new Error(`messageIds accepts at most ${maxBatchMessages} message IDs.`);
+  if (input.offset) throw new Error('offset works with a single messageId; continue one long message with messageId and offset.');
+  const maxChars = clamp(input.maxChars, 8000, 200, 20000);
+  const messages = await mapWithConcurrency(ids, batchConcurrency, async messageId => {
+    try {
+      return await readMailMessage(config, { ...input, messageId, offset: 0, maxChars });
+    } catch (error) {
+      return { id: messageId, error: itemError(error) };
+    }
+  });
+  return {
+    count: messages.length,
+    failed: messages.filter(message => 'error' in message).length || undefined,
+    messages
   };
 }
 
@@ -551,25 +749,97 @@ export function shapeCalendarEvent(event: JsonRecord) {
   };
 }
 
+/**
+ * The calendar a calendar call reads: the signed-in user's own, or another user's calendar shared with
+ * or delegated to them, which needs the Calendars.Read.Shared delegated permission.
+ */
+export function calendarBase(
+  config: Pick<AppConfig, 'disabledGraphScopes' | 'allowedGraphScopes'>,
+  owner: string | undefined
+): { base: string; scope: 'Calendars.Read' | 'Calendars.Read.Shared'; owner?: string } {
+  const value = owner?.trim();
+  if (!value || isCurrentUser(value)) return { base: '/me', scope: 'Calendars.Read' };
+  requireGraphScope(config, 'Calendars.Read.Shared', "Reading another person's calendar");
+  return { base: `/users/${segment(value)}`, scope: 'Calendars.Read.Shared', owner: value };
+}
+
+const calendarCursorPattern = /^\/(me|users\/[^/]+)\/calendarView$/;
+
 export async function listCalendarOverview(
   config: AppConfig,
-  input: { startDateTime: string; endDateTime: string; top?: number; timeZone?: string }
+  input: {
+    startDateTime: string;
+    endDateTime: string;
+    top?: number;
+    timeZone?: string;
+    calendarOwner?: string;
+    cursor?: string;
+  }
 ) {
   const timeZone = (input.timeZone ?? 'China Standard Time').replace(/"/g, '');
-  const response = await graphRequest(config, 'GET', '/me/calendarView', {
-    query: {
-      startDateTime: input.startDateTime,
-      endDateTime: input.endDateTime,
-      $top: clamp(input.top, 50, 1, 100),
-      $select:
-        'id,subject,organizer,attendees,start,end,location,webLink,isOnlineMeeting,responseStatus,seriesMasterId,isAllDay,isCancelled,showAs,bodyPreview',
-      $orderby: 'start/dateTime'
-    },
-    prefer: `outlook.timezone="${timeZone}"`,
-    scopes: ['Calendars.Read']
-  });
-  const events = records(record(response).value).map(shapeCalendarEvent);
-  return { timeZone, count: events.length, events, nextCursor: nextLink(response) };
+  const prefer = `outlook.timezone="${timeZone}"`;
+  let response: unknown;
+  let owner: string | undefined;
+  if (input.cursor) {
+    const url = cursorPath(config, input.cursor, calendarCursorPattern);
+    const target = calendarBase(config, cursorOwner(config, url));
+    owner = target.owner;
+    response = await graphRequest(config, 'GET', url, { prefer, scopes: [target.scope] });
+  } else {
+    const target = calendarBase(config, input.calendarOwner);
+    owner = target.owner;
+    response = await graphRequest(config, 'GET', `${target.base}/calendarView`, {
+      query: {
+        startDateTime: input.startDateTime,
+        endDateTime: input.endDateTime,
+        $top: clamp(input.top, 50, 1, 100),
+        $select:
+          'id,subject,organizer,attendees,start,end,location,webLink,isOnlineMeeting,responseStatus,seriesMasterId,isAllDay,isCancelled,showAs,bodyPreview',
+        $orderby: 'start/dateTime'
+      },
+      prefer,
+      scopes: [target.scope]
+    });
+  }
+  const { events, conflictCount } = markCalendarOverlaps(records(record(response).value).map(shapeCalendarEvent));
+  return { calendarOwner: owner, timeZone, count: events.length, conflictCount, events, nextCursor: nextLink(response) };
+}
+
+type CalendarEventSummary = ReturnType<typeof shapeCalendarEvent>;
+
+/**
+ * Marks events that overlap in time with overlapsWith. Cancelled, all-day, declined and "free"
+ * events never conflict. Times share the requested time zone, so ISO strings compare directly.
+ */
+export function markCalendarOverlaps(events: CalendarEventSummary[]) {
+  const busy = events
+    .map((event, index) => ({ event, index }))
+    .filter(
+      ({ event }) =>
+        event.start &&
+        event.end &&
+        !event.isCancelled &&
+        !event.isAllDay &&
+        event.showAs !== 'free' &&
+        event.myResponse !== 'declined'
+    )
+    .sort((left, right) => (left.event.start ?? '').localeCompare(right.event.start ?? ''));
+  const overlaps = new Map<number, Array<{ id?: string; subject: string }>>();
+  const add = (index: number, other: CalendarEventSummary) =>
+    overlaps.set(index, [...(overlaps.get(index) ?? []), { id: other.id, subject: other.subject }]);
+  let conflictCount = 0;
+  for (let left = 0; left < busy.length; left += 1) {
+    for (let right = left + 1; right < busy.length; right += 1) {
+      if ((busy[right].event.start ?? '') >= (busy[left].event.end ?? '')) break;
+      conflictCount += 1;
+      add(busy[left].index, busy[right].event);
+      add(busy[right].index, busy[left].event);
+    }
+  }
+  return {
+    conflictCount,
+    events: events.map((event, index) => (overlaps.has(index) ? { ...event, overlapsWith: overlaps.get(index) } : event))
+  };
 }
 
 // Files (OneDrive + SharePoint)
@@ -802,11 +1072,13 @@ async function resolveDriveItem(
   input: { url?: string; driveId?: string; itemId?: string }
 ): Promise<JsonRecord> {
   if (input.url) {
+    // The shares API documents Files.ReadWrite as its least-privileged delegated permission.
+    requireGraphScope(config, 'Files.ReadWrite', 'Opening a OneDrive or SharePoint file by link');
     try {
       return record(
         await graphRequest(config, 'GET', `/shares/${sharingToken(input.url)}/driveItem`, {
           headers: { Prefer: 'redeemSharingLinkIfNecessary' },
-          scopes: ['Files.Read.All']
+          scopes: ['Files.ReadWrite']
         })
       );
     } catch (error) {
@@ -838,6 +1110,112 @@ async function redirectLocation(config: AppConfig, path: string, query?: Record<
   return text(response.location);
 }
 
+/** Microsoft Graph converts files to other formats only up to this size. */
+const pdfConversionMaxBytes = 2 * 1024 * 1024;
+
+const maxInlineTextBytes = 1024 * 1024;
+const maxBase64AttachmentBytes = 10 * 1024 * 1024;
+
+export const attachmentLinkNotice =
+  'Single-use, short-lived URL served by this MCP server: download it now with a plain HTTP GET (no Authorization header). It stops working after one download. Do not share, store or log it.';
+
+/**
+ * One mail attachment for an agent: small text attachments inline, cloud-file links as their source URL,
+ * everything else as a single-use download URL (or base64 when the deployment has no HTTP route).
+ */
+export async function getMailAttachment(
+  config: AppConfig,
+  input: {
+    messageId: string;
+    attachmentId: string;
+    mailbox?: string;
+    format?: 'url' | 'base64';
+    includeText?: boolean;
+    maxTextChars?: number;
+  }
+) {
+  const { base, scope } = mailboxBase(config, input.mailbox);
+  const attachmentPath = `${base}/messages/${segment(input.messageId)}/attachments/${segment(input.attachmentId)}`;
+  const meta = record(
+    await graphRequest(config, 'GET', attachmentPath, {
+      query: { $select: 'id,name,contentType,size,isInline,lastModifiedDateTime' },
+      scopes: [scope]
+    })
+  );
+  const odataType = text(meta['@odata.type']) ?? '';
+  const kind = odataType.endsWith('referenceAttachment') ? 'link' : odataType.endsWith('itemAttachment') ? 'item' : 'file';
+  const size = typeof meta.size === 'number' ? meta.size : undefined;
+  let name = text(meta.name) ?? 'attachment';
+  let contentType = text(meta.contentType) ?? 'application/octet-stream';
+  if (kind === 'item') {
+    contentType = 'message/rfc822';
+    if (!/\.[a-z0-9]{2,5}$/i.test(name)) name = `${name}.eml`;
+  }
+  const summary = {
+    id: text(meta.id) ?? input.attachmentId,
+    name,
+    kind,
+    contentType,
+    size,
+    inline: meta.isInline === true ? true : undefined
+  };
+
+  if (kind === 'link') {
+    const full = record(await graphRequest(config, 'GET', attachmentPath, { scopes: [scope] }));
+    return {
+      ...summary,
+      sourceUrl: text(full.sourceUrl),
+      hint: 'This attachment links to a cloud file. Call files_get_download_url with url set to sourceUrl.'
+    };
+  }
+
+  const valuePath = `${attachmentPath}/$value`;
+  if (kind === 'file' && input.includeText !== false && isTextLike(name, contentType) && (size ?? 0) <= maxInlineTextBytes) {
+    const bytes = record(
+      await graphRequest(config, 'GET', valuePath, {
+        scopes: [scope],
+        responseType: 'base64',
+        maxResponseBytes: maxInlineTextBytes
+      })
+    );
+    const decoded = fileText(Buffer.from(text(bytes.contentBase64) ?? '', 'base64').toString('utf8'));
+    const result = truncateText(decoded, clamp(input.maxTextChars, 20000, 200, 100000));
+    return { ...summary, textContent: result.text, textTruncated: result.truncated || undefined };
+  }
+
+  const format = input.format ?? (attachmentLinksAvailable(config) ? 'url' : 'base64');
+  if (format === 'base64') {
+    if ((size ?? 0) > maxBase64AttachmentBytes) {
+      throw new Error('Attachments larger than 10 MB are only available as a download URL (format url).');
+    }
+    const bytes = record(
+      await graphRequest(config, 'GET', valuePath, {
+        scopes: [scope],
+        responseType: 'base64',
+        maxResponseBytes: maxBase64AttachmentBytes
+      })
+    );
+    return { ...summary, contentBase64: text(bytes.contentBase64) };
+  }
+  if (!attachmentLinksAvailable(config)) {
+    throw new Error('Download URLs need the HTTP transport. Use format base64 for attachments up to 10 MB.');
+  }
+
+  const accessToken = await graphAccessTokenForScopes(config, [scope]);
+  const { ticket, expiresAt } = attachmentLinkStore.create(
+    { graphPath: valuePath, accessToken, name, contentType, userKey: currentUser().id ?? 'local' },
+    config.attachmentUrlTtlSeconds
+  );
+  return {
+    ...summary,
+    downloadUrl: attachmentLinkUrl(config, ticket),
+    expiresAt: new Date(expiresAt).toISOString(),
+    downloadUrlNotice: attachmentLinkNotice,
+    parsingHint:
+      'Download the bytes and parse them on the client. Attachments protected by sensitivity-label encryption may not be readable after download.'
+  };
+}
+
 export const downloadUrlNotice =
   'Pre-authenticated, short-lived URL: download it now with a plain HTTP GET (no Authorization header). Do not share, store or log it.';
 
@@ -867,8 +1245,12 @@ export async function getFileDownloadUrl(
   const driveId = shaped.driveId;
   const itemId = shaped.itemId;
   const mimeType = text(record(item.file).mimeType);
-  const format = input.format ?? 'original';
   const notes: string[] = [];
+  let format = input.format ?? 'original';
+  if (format === 'pdf' && (shaped.size ?? 0) > pdfConversionMaxBytes) {
+    notes.push('PDF conversion supports files up to 2 MB, so the original file is returned instead.');
+    format = 'original';
+  }
   let downloadUrl: string | undefined;
 
   if (format === 'pdf') {
@@ -901,7 +1283,7 @@ export async function getFileDownloadUrl(
       try {
         const response = await fetch(downloadUrl, { signal: AbortSignal.timeout(config.graphResilience.timeoutMs) });
         if (response.ok) {
-          const decoded = normalizeText(await response.text());
+          const decoded = fileText(await response.text());
           const result = truncateText(decoded, clamp(input.maxTextChars, 20000, 200, 100000));
           textContent = result.text;
           textTruncated = result.truncated || undefined;

@@ -108,7 +108,7 @@ export const usersModule: ToolModule = {
       {
         title: 'List User Direct Reports',
         description: describeTool(
-          'List direct reports for the signed-in user or another organization user. Requires delegated User.Read.All.',
+          'List direct reports for the signed-in user or another organization user. Needs only basic directory read (User.ReadBasic.All); job title and department are returned when the deployment also grants User.Read.All.',
           ['查看我的下属', '列出直属团队成员', '查看某人的直接汇报人']
         ),
         inputSchema: {
@@ -130,7 +130,7 @@ export const usersModule: ToolModule = {
       {
         title: 'List User Memberships',
         description: describeTool(
-          'List groups and directory objects that a user directly belongs to. Omit the user to query the signed-in user.',
+          'List groups and directory objects that a user directly belongs to. Omit the user to query the signed-in user; another user needs the User.Read.All permission.',
           ['查看我加入的组', '查看用户所属组', '查询用户成员关系']
         ),
         inputSchema: {

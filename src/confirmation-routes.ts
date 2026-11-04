@@ -123,7 +123,7 @@ function statusPage(title: string, message: string, error = false): string {
 }
 
 export function mountConfirmationRoutes(app: any, config: AppConfig): void {
-  if (!hasConfirmationPolicy(config)) return;
+  if (config.readOnly || !hasConfirmationPolicy(config)) return;
 
   for (const routePath of mountedRoutePaths(config, '/confirm/:confirmToken')) {
     app.get(routePath, (req: any, res: any) => {

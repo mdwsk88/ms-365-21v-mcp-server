@@ -495,7 +495,7 @@ test('download URLs resolve sharing links, convert to PDF and inline small text 
   );
   assert.equal(notes.requests[0].url.pathname, '/v1.0/me/drive/items/item-1');
   assert.equal(notes.requests[1].init.headers, undefined);
-  assert.equal(notes.result.textContent, '# Notes\n\nline');
+  assert.equal(notes.result.textContent, '# Notes\n\n\nline', 'file text keeps its blank lines; only line endings change');
 
   await assert.rejects(
     () => withMockFetch(() => json({ ...driveItem, folder: { childCount: 2 } }), () => getFileDownloadUrl(config, { itemId: 'item-1' })),
@@ -539,6 +539,7 @@ test('hybrid is the default and lists the scenario tools plus gateway controls',
       'gateway_execute_tool',
       'gateway_get_tool_schema',
       'gateway_search_tools',
+      'mail_get_attachment',
       'mail_get_message',
       'mail_list_messages',
       'mail_search_messages',
@@ -670,4 +671,60 @@ test('file tools read mcp.sharepoint from the caller App Roles', async (t) => {
   const denied = await searchAs(['mcp.sharepoint']);
   assert.equal(denied.isError, true);
   assert.equal(denied.structuredContent.error.code, 'permission_denied');
+});
+
+test('opening a file by link needs Files.ReadWrite, and large PDF conversions fall back to the original', async (t) => {
+  const config = await graphTestConfig(t);
+  const withoutWrite = { ...config, disabledGraphScopes: ['Files.ReadWrite'] };
+  await assert.rejects(
+    () => getFileDownloadUrl(withoutWrite, { url: 'https://tenant.sharepoint.cn/:w:/s/Project/abc' }),
+    error => error.code === 'scope_not_enabled' && /Files\.ReadWrite/.test(error.message)
+  );
+  const byId = await withMockFetch(
+    () => json(driveItem),
+    () => getFileDownloadUrl(withoutWrite, { driveId: 'drive-1', itemId: 'item-1' })
+  );
+  assert.equal(byId.result.downloadUrl, driveItem['@microsoft.graph.downloadUrl']);
+
+  const large = await withMockFetch(
+    () => json({ ...driveItem, size: 3 * 1024 * 1024 }),
+    () => getFileDownloadUrl(config, { driveId: 'drive-1', itemId: 'item-1', format: 'pdf' })
+  );
+  assert.equal(large.requests.length, 1);
+  assert.equal(large.result.format, 'original');
+  assert.equal(large.result.downloadUrl, driveItem['@microsoft.graph.downloadUrl']);
+  assert.match(large.result.notes.join(' '), /2 MB/);
+});
+
+test('calendar view flags overlapping meetings but ignores cancelled, declined, free and all-day events', async (t) => {
+  const config = await graphTestConfig(t);
+  const event = (id, start, end, extra = {}) => ({
+    id,
+    subject: id,
+    start: { dateTime: `2026-10-12T${start}:00.0000000`, timeZone: 'China Standard Time' },
+    end: { dateTime: `2026-10-12T${end}:00.0000000`, timeZone: 'China Standard Time' },
+    ...extra
+  });
+  const { result } = await withMockFetch(
+    () =>
+      json({
+        value: [
+          event('standup', '09:00', '09:30'),
+          event('review', '09:15', '10:00'),
+          event('back-to-back', '10:00', '10:30'),
+          event('cancelled', '09:00', '10:00', { isCancelled: true }),
+          event('declined', '09:00', '10:00', { responseStatus: { response: 'declined' } }),
+          event('focus', '09:00', '12:00', { showAs: 'free' }),
+          event('holiday', '00:00', '23:59', { isAllDay: true })
+        ]
+      }),
+    () => listCalendarOverview(config, { startDateTime: '2026-10-11T16:00:00Z', endDateTime: '2026-10-12T16:00:00Z' })
+  );
+  assert.equal(result.conflictCount, 1);
+  const byId = Object.fromEntries(result.events.map(item => [item.id, item]));
+  assert.deepEqual(byId.standup.overlapsWith, [{ id: 'review', subject: 'review' }]);
+  assert.deepEqual(byId.review.overlapsWith, [{ id: 'standup', subject: 'standup' }]);
+  for (const id of ['back-to-back', 'cancelled', 'declined', 'focus', 'holiday']) {
+    assert.equal(byId[id].overlapsWith, undefined, id);
+  }
 });

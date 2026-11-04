@@ -6,7 +6,6 @@ import {
   deleteMailFolder,
   deleteMessageAttachment,
   getMailFolder,
-  getMessageAttachment,
   listChildMailFolders,
   updateMailFolder
 } from '../graph-extended.js';
@@ -22,10 +21,25 @@ import {
   sendMail,
   updateMessageReadState
 } from '../graph.js';
-import { listMailOverview, readMailMessage, searchMailOverview } from '../graph-scenarios.js';
+import {
+  getMailAttachment,
+  listMailOverview,
+  readMailMessage,
+  readMailMessages,
+  searchMailOverview
+} from '../graph-scenarios.js';
 import { recipientSchema } from './schemas.js';
 import { describeTool, runTool } from './results.js';
 import type { ToolModule } from './types.js';
+
+const mailboxSchema = z
+  .string()
+  .min(1)
+  .max(320)
+  .optional()
+  .describe(
+    'Read another mailbox instead of your own: a shared mailbox or one delegated to you, by email address or user ID. Needs delegated Mail.Read.Shared.'
+  );
 
 export const mailModule: ToolModule = {
   category: 'mail',
@@ -62,8 +76,8 @@ export const mailModule: ToolModule = {
       {
         title: 'List My Mail',
         description: describeTool(
-          'List mail newest first with sender, recipients, preview, read and flag state. Filter by folder (inbox by default, or all), time window, unread, flagged, importance or sender address. Use mail_search_messages for keywords. Requires delegated Mail.Read.',
-          ['查看我的邮件', '看最近邮件', '查看未读邮件', '查看标旗邮件', '某段时间的邮件', '列出收件箱邮件']
+          'List mail newest first with sender, recipients, preview, read and flag state. Filter by folder (inbox by default, or all), time window, unread, flagged, importance or sender address. Use mail_search_messages for keywords. mailbox reads a shared or delegated mailbox. Requires delegated Mail.Read.',
+          ['查看我的邮件', '看最近邮件', '查看未读邮件', '查看标旗邮件', '某段时间的邮件', '列出收件箱邮件', '查看共享邮箱']
         ),
         inputSchema: {
           top: z.number().int().min(1).max(50).optional().describe('Messages to return, from 1 to 50. Defaults to 20.'),
@@ -79,6 +93,7 @@ export const mailModule: ToolModule = {
           flaggedOnly: z.boolean().optional().describe('Only flagged (follow-up) messages.'),
           importance: z.enum(['low', 'normal', 'high']).optional().describe('Only this importance.'),
           from: z.string().max(320).optional().describe('Only messages from this sender email address.'),
+          mailbox: mailboxSchema,
           cursor: z.string().max(4000).optional().describe('nextCursor from the previous call.')
         },
         annotations: { readOnlyHint: true, openWorldHint: true }
@@ -91,13 +106,14 @@ export const mailModule: ToolModule = {
       {
         title: 'Search My Mail',
         description: describeTool(
-          'Search mail by keywords with KQL, for example "budget", "from:Zhang Wei", "subject:review", "hasAttachments:true". Searches all folders unless folder is set. Requires delegated Mail.Read.',
-          ['搜索邮件', '按关键词查邮件', '查找某人发的邮件', '查找某封邮件']
+          'Search mail by keywords with KQL, for example "budget", "from:Zhang Wei", "subject:review", "hasAttachments:true". Searches all folders unless folder is set; mailbox searches a shared or delegated mailbox. Requires delegated Mail.Read.',
+          ['搜索邮件', '按关键词查邮件', '查找某人发的邮件', '查找某封邮件', '搜索共享邮箱']
         ),
         inputSchema: {
           query: z.string().min(1).max(200).describe('Keywords or KQL such as from:, to:, subject:, body:, hasAttachments:.'),
           top: z.number().int().min(1).max(50).optional().describe('Messages to return, from 1 to 50. Defaults to 20.'),
           folder: z.string().min(1).max(300).optional().describe('Limit to a folder such as inbox; defaults to all folders.'),
+          mailbox: mailboxSchema,
           cursor: z.string().max(4000).optional().describe('nextCursor from the previous call.')
         },
         annotations: { readOnlyHint: true, openWorldHint: true }
@@ -110,23 +126,52 @@ export const mailModule: ToolModule = {
       {
         title: 'Get Mail Details',
         description: describeTool(
-          'Read one message as plain text with recipients and attachment list. onlyNewContent drops quoted earlier mails; long bodies continue with offset. Requires delegated Mail.Read.',
-          ['查看邮件详情', '读取邮件正文', '查看邮件内容', '查看邮件附件列表']
+          'Read one message, or up to 10 with messageIds, as plain text with recipients and attachment list. Text is cleaned for reading: Safe Links unwrapped, tracking parameters and invisible padding removed, links over 500 characters outside Microsoft 365 shortened to [link: host]; clean false keeps the text as Outlook renders it. onlyNewContent drops quoted earlier mails; a long body continues with offset. Requires delegated Mail.Read.',
+          ['查看邮件详情', '读取邮件正文', '查看邮件内容', '查看邮件附件列表', '批量读取多封邮件']
         ),
         inputSchema: {
-          messageId: z.string().min(1).max(300).describe('Message ID from a mail list or search result.'),
+          messageId: z.string().min(1).max(300).optional().describe('Message ID from a mail list or search result.'),
+          messageIds: z
+            .array(z.string().min(1).max(300))
+            .min(1)
+            .max(10)
+            .optional()
+            .describe('Up to 10 message IDs to read in one call instead of messageId. Failed messages come back with an error.'),
           bodyFormat: z.enum(['text', 'html']).optional().describe('Body format. Defaults to text.'),
           onlyNewContent: z
             .boolean()
             .optional()
             .describe('Return only the content new in this message, without the quoted thread. Defaults to false.'),
-          maxChars: z.number().int().min(200).max(100000).optional().describe('Maximum body characters. Defaults to 20000.'),
-          offset: z.number().int().min(0).optional().describe('Body character offset, from body.nextOffset of a previous call.'),
-          includeAttachments: z.boolean().optional().describe('Include the attachment list. Defaults to true.')
+          maxChars: z
+            .number()
+            .int()
+            .min(200)
+            .max(100000)
+            .optional()
+            .describe('Maximum body characters per message. Defaults to 20000; with messageIds 8000, at most 20000.'),
+          offset: z
+            .number()
+            .int()
+            .min(0)
+            .optional()
+            .describe('Body character offset for a single messageId, from body.nextOffset of a previous call.'),
+          includeAttachments: z.boolean().optional().describe('Include the attachment list. Defaults to true.'),
+          clean: z
+            .boolean()
+            .optional()
+            .describe('Clean text bodies for reading. Defaults to true; false returns the text exactly as Outlook renders it.'),
+          mailbox: mailboxSchema
         },
         annotations: { readOnlyHint: true, openWorldHint: true }
       },
-      async input => runTool(async () => readMailMessage(config, input))
+      async ({ messageId, messageIds, ...options }) =>
+        runTool(async () => {
+          if (messageIds) {
+            return readMailMessages(config, { ...options, messageIds: messageId ? [messageId, ...messageIds] : messageIds });
+          }
+          if (!messageId) throw new Error('Provide messageId, or messageIds to read several messages.');
+          return readMailMessage(config, { ...options, messageId });
+        })
     );
 
     server.registerTool(
@@ -250,17 +295,23 @@ export const mailModule: ToolModule = {
       {
         title: 'Get Mail Attachment',
         description: describeTool(
-          'Read one mail attachment. Set raw=true to return file bytes as base64, limited to 10 MB. Requires delegated Mail.Read.',
-          ['读取邮件附件', '下载邮件附件', '查看附件内容']
+          'Read one mail attachment for an agent: small text files (txt, csv, json, md...) come back as text; other files as a single-use, short-lived download URL to fetch and parse on the client; attached cloud files as their link. Get attachment ids from mail_get_message. Requires delegated Mail.Read.',
+          ['读取邮件附件', '下载邮件附件', '查看附件内容', '打开邮件里的文件']
         ),
         inputSchema: {
           messageId: z.string().min(1).max(300).describe('Message ID.'),
-          attachmentId: z.string().min(1).max(500).describe('Attachment ID.'),
-          raw: z.boolean().optional().describe('Return raw attachment bytes as base64. Defaults to false.')
-        }
+          attachmentId: z.string().min(1).max(500).describe('Attachment ID from mail_get_message.'),
+          format: z
+            .enum(['url', 'base64'])
+            .optional()
+            .describe('url (default on HTTP deployments): single-use download URL. base64: inline bytes, up to 10 MB.'),
+          includeText: z.boolean().optional().describe('Return small plain-text attachments inline. Defaults to true.'),
+          maxTextChars: z.number().int().min(200).max(100000).optional().describe('Maximum inline text characters. Defaults to 20000.'),
+          mailbox: mailboxSchema
+        },
+        annotations: { readOnlyHint: true, openWorldHint: true }
       },
-      async ({ messageId, attachmentId, raw }) =>
-        runTool(async () => getMessageAttachment(config, messageId, attachmentId, raw))
+      async input => runTool(async () => getMailAttachment(config, input))
     );
 
     server.registerTool(

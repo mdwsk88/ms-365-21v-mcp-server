@@ -1,5 +1,6 @@
 import type { AppConfig } from './config.js';
 import { graphRequest } from './graph.js';
+import { requireGraphScope } from './scope-policy.js';
 
 type RecipientInput = { email: string; name?: string };
 type EventDateTimeInput = { dateTime: string; timeZone?: string };
@@ -86,11 +87,13 @@ export async function listUserDirectReports(config: AppConfig, userId = 'me', to
       $top: clampTop(top, 25, 100),
       $select: 'id,displayName,userPrincipalName,mail,jobTitle,department,officeLocation'
     },
-    scopes: ['User.Read.All']
+    // User.ReadBasic.All is the documented minimum; properties beyond the basic profile come back null.
+    scopes: ['User.Read', 'User.ReadBasic.All']
   });
 }
 
 export async function listUserMemberships(config: AppConfig, userId = 'me', top?: number): Promise<unknown> {
+  if (userId !== 'me') requireGraphScope(config, 'User.Read.All', "Reading another user's memberships");
   const path = userId === 'me' ? '/me/memberOf' : `/users/${segment(userId)}/memberOf`;
   return graphRequest(config, 'GET', path, {
     query: {
@@ -209,21 +212,6 @@ export async function copyMessage(config: AppConfig, messageId: string, destinat
   return graphRequest(config, 'POST', `/me/messages/${segment(messageId)}/copy`, {
     body: { destinationId: destinationFolderId },
     scopes: ['Mail.ReadWrite']
-  });
-}
-
-export async function getMessageAttachment(
-  config: AppConfig,
-  messageId: string,
-  attachmentId: string,
-  raw = false
-): Promise<unknown> {
-  const path = `/me/messages/${segment(messageId)}/attachments/${segment(attachmentId)}${raw ? '/$value' : ''}`;
-  return graphRequest(config, 'GET', path, {
-    query: raw ? undefined : { $expand: 'microsoft.graph.itemattachment/item' },
-    scopes: ['Mail.Read'],
-    responseType: raw ? 'base64' : 'auto',
-    maxResponseBytes: 10 * 1024 * 1024
   });
 }
 

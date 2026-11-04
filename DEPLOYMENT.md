@@ -2,7 +2,7 @@
 
 面向 Microsoft 365 operated by 21Vianet（世纪互联）的远程 MCP 服务。它通过标准 Streamable HTTP 和 OAuth 2.1，让支持 MCP 的 AI 客户端以当前登录用户的身份访问 Microsoft Graph 中国区。
 
-项目目前实现 154 个工具（含 3 个动态发现工具），覆盖邮件、日历、OneDrive、SharePoint、Teams、联系人、组织用户、Microsoft Search 和智能聚合。所有业务调用都使用 Delegated permissions，不使用后台应用身份冒充用户。
+项目目前实现 151 个工具（含 3 个动态发现工具），覆盖邮件、日历、OneDrive、SharePoint、Teams、联系人、组织用户和 Microsoft Search。所有业务调用都使用 Delegated permissions，不使用后台应用身份冒充用户。
 
 > 本项目不是 Microsoft 或 21Vianet 官方产品。生产使用前，请由租户管理员和安全团队审核 Entra 权限、Conditional Access、用户分配和数据合规要求。
 
@@ -13,7 +13,7 @@
 - **按用户授权**：可以用 Entra App Roles 控制每个用户可见和可调用的工具模块，工具列表与实际执行使用同一套校验。
 - **中文请求快路径**：常用工具可直接暴露；长尾工具可按中文意图动态搜索，兼顾调用速度和上下文大小。
 - **可审计的写操作**：邮件、Teams 消息和高风险写操作支持确认策略、一次性批准和脱敏审计。
-- **开箱即用的智能聚合**：提供邮件摘要和日程冲突分析，减少 Agent 自己组合多次 Graph 请求的成本。
+- **场景化直达工具**：读 Teams 聊天、邮件、日历和文档时直接返回整理后的结果（例如会议冲突标记），减少 Agent 自己组合多次 Graph 请求的成本。
 
 ## 已验证客户端
 
@@ -46,7 +46,6 @@
 | Teams | 团队、频道、聊天和消息，实际范围取决于租户权限 |
 | 联系人与用户 | 联系人管理、当前用户和组织用户基础资料 |
 | Microsoft Search | 跨邮件、日历、文件、SharePoint 和 Teams 搜索 |
-| 智能聚合 | 邮件摘要、日程冲突分析 |
 
 完整工具、App Role 和 Graph scope 映射见 [工具目录](docs/TOOL_CATALOG.md)。21V 对部分全球云 API 不提供支持，本项目不会把这些 API 标记为可用。
 
@@ -186,7 +185,13 @@ Entra 回调: https://mcp.example.cn/oauth/microsoft/callback
 | 联系人 | `Contacts.Read`、`Contacts.ReadWrite` |
 | 组织用户基础资料 | `User.ReadBasic.All` |
 
-每次增加权限后都要重新执行 admin consent。组织范围较大的 Teams、Group、User 和站点权限应先经过安全审批；未获批的 scope 可以保留在 `MCP_DISABLED_GRAPH_SCOPES`，相关工具会同时从工具列表和执行入口隐藏。
+每次增加权限后都要重新执行 admin consent。组织范围较大的 Teams、Group、User 和站点权限应先经过安全审批。
+
+推荐用 `MCP_ALLOWED_GRAPH_SCOPES` 列出应用上**已经同意**的全部委托权限（白名单）：需要其他权限的工具会自动从工具列表和执行入口隐藏，以后新增工具也不会因为缺权限在调用时才失败。较宽的权限可以覆盖较窄的，例如 `Mail.ReadWrite` 覆盖 `Mail.Read`。`MCP_DISABLED_GRAPH_SCOPES`（黑名单）仍然可用，并且优先于白名单。
+
+部署前后都可以运行 `npm run permissions`（或 `node dist/index.js --list-permissions --json`）：它按当前配置列出启用的工具需要哪些权限、哪些工具因为缺权限被隐藏，以及白名单里哪些权限没有工具使用。它只读配置，不访问网络。
+
+只想提供读取能力时，设置 `MCP_READ_ONLY=true`：所有发送、创建、修改、删除类工具和 `confirm_execute` 都会移除，`/healthz` 返回 `readOnly: true`。这时也可以从应用注册里删掉写权限；注意按链接打开文件用的 `/shares` 接口最低需要 `Files.ReadWrite`，删掉后 `files_get_download_url` 只能按文件 ID 使用。
 
 ### 2. 获取代码并填写配置
 
@@ -227,6 +232,8 @@ MCP_REQUIRED_TOKEN_SCOPES=access_as_user
 # OAuth bridge
 MCP_OAUTH_BRIDGE_ENABLED=true
 MCP_OAUTH_BRIDGE_MICROSOFT_CLIENT_TYPE=confidential_web
+# 网页类 MCP 客户端的回调域名，逗号分隔；本机回环地址和桌面应用协议始终允许
+MCP_OAUTH_REDIRECT_HOSTS=
 
 # 第一次联调可暂时关闭；生产建议启用并分配 App Roles
 MCP_ROLE_BASED_FILTERING=false
@@ -318,7 +325,7 @@ npm run dev:http
 1. 在 MCP API App Registration 的 Manifest 中加入 [预置 App Roles](docs/entra-app-roles.json)。
 2. 打开 **Entra ID > 企业应用程序 > MCP API 应用 > 用户和组**。
 3. 添加用户或组，并分配 `mcp.mail`、`mcp.calendar`、`mcp.drive` 等角色。
-4. 需要智能邮件摘要时分配 `mcp.smart` + `mcp.mail`；需要日程冲突分析时分配 `mcp.smart` + `mcp.calendar`。
+4. 需要全文搜索时，在数据域角色之外再分配 `mcp.search`，例如搜索邮件需要 `mcp.search` + `mcp.mail`。
 5. 把 `MCP_ROLE_BASED_FILTERING` 改为 `true` 并重启服务。
 6. 如需阻止未分配用户登录，在 Enterprise Application 的属性中把 **Assignment required?** 设置为 **Yes**。
 
@@ -328,7 +335,7 @@ npm run dev:http
 
 | 模式 | 客户端看到的工具 | 适用场景 |
 |---|---|---|
-| `hybrid`（默认） | 高频只读工具直达，其余工具动态发现 | 推荐，管理员也只看到约 13 个工具 |
+| `hybrid`（默认） | 高频只读工具直达，其余工具动态发现 | 推荐，管理员也只看到约 14 个工具 |
 | `direct` | 当前用户获准的全部工具 | 只开放少数模块、追求最少调用轮次 |
 | `discovery` | 基础工具和动态发现工具 | 希望工具清单最小 |
 
@@ -337,7 +344,7 @@ npm run dev:http
 | 场景 | 工具 |
 |---|---|
 | Teams 聊天 | `teams_list_chats`、`teams_list_chat_messages` |
-| 邮件 | `mail_list_messages`、`mail_search_messages`、`mail_get_message` |
+| 邮件 | `mail_list_messages`、`mail_search_messages`、`mail_get_message`、`mail_get_attachment` |
 | 日历 | `calendar_list_view` |
 | 文档 | `files_search`、`files_get_download_url` |
 
@@ -360,6 +367,32 @@ npm run dev:http
 - 容器内必须监听 `0.0.0.0`，此时默认不校验 Host；在 `MCP_ALLOWED_HOSTS` 中填写域名即可开启校验。
 - 不在允许列表中的 Host 会收到 `403 Invalid Host`。服务启动日志会打印实际接受的 Host 列表。
 
+## OAuth 客户端回调地址
+
+开启 OAuth bridge 后，MCP 客户端通过动态注册（`/oauth/register`）拿到 client_id。如果回调地址不受限制，任何人都可以注册一个回调指向自己服务器的客户端，再把授权链接发给已登录的同事：Microsoft 对本服务自己的、已经同意过的应用不会再弹同意页，授权码就会落到对方手里。因此注册时和每次授权时都按下面的规则检查回调地址：
+
+- 本机回环地址（`http://localhost:端口`、`http://127.0.0.1:端口`、`http://[::1]:端口`）和桌面应用的自定义协议（如 `cursor://...`）始终允许。Claude Code、Codex、Cursor、VS Code 等本地客户端都属于这一类。
+- 其他地址必须使用 https，并且主机名列在 `MCP_OAUTH_REDIRECT_HOSTS` 中，例如 `MCP_OAUTH_REDIRECT_HOSTS=claude.ai,chatgpt.com,*.example.cn`。`*.example.cn` 匹配子域名，不匹配 `example.cn` 本身。`*` 表示接受任意 https 主机，等于升级前的行为，不建议使用。
+- 已注册客户端的回调不在规则内时，授权会返回 `400`，日志事件为 `authorize_rejected_redirect_policy`。升级前先查日志中 `dynamic_client_registered` 的 `firstRedirect`，把在用的网页客户端域名加进去。
+- 所有客户端都注册好后，可以设 `MCP_OAUTH_DYNAMIC_REGISTRATION=false` 关闭注册。元数据中不再出现 `registration_endpoint`，已注册的客户端继续可用。
+- 服务最多保存 1000 个已注册客户端，超出时淘汰最久未使用、且没有有效会话的客户端；每个客户端最多 10 个回调地址。
+
+## 限流与会话
+
+- **限流**（默认开启，`MCP_RATE_LIMIT_ENABLED`）：
+  - OAuth、附件下载、确认页和管理接口按客户端地址计数，默认每分钟 120 次（`MCP_RATE_LIMIT_IP_PER_MINUTE`），客户端注册为其十分之一。
+  - `/mcp` 按登录用户计数，默认每分钟 600 次（`MCP_RATE_LIMIT_USER_PER_MINUTE`），防止失控的 Agent 耗尽整个应用的 Graph 限额。
+  - 超限返回 `429` 和 `Retry-After`。计数保存在进程内存里，多实例部署时各实例分别计数。
+- **客户端地址**：取自反向代理转发的 `X-Forwarded-For`，由 `MCP_TRUST_PROXY` 决定信任哪些代理。
+  - 监听 `127.0.0.1` 时默认只信任本机代理（`loopback`），其他情况默认不信任转发头。
+  - 代理前面还有负载均衡时，填代理层数（如 `2`）或代理地址段（如 `loopback, 10.0.0.0/8`）。
+  - 不能设为 `true`：那样客户端可以伪造任意地址。
+  - Nginx 需要 `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;`，否则所有请求都会算作同一个地址。
+- **会话**：
+  - 有状态 HTTP 会话空闲 `MCP_HTTP_SESSION_IDLE_MINUTES`（默认 480）分钟后关闭，最多保留 `MCP_HTTP_MAX_SESSIONS`（默认 200）个，超出时先关闭最久未用的会话；两者设为 `0` 表示不限制。
+  - 每个会话约占 2.6 MB 内存。
+  - 会话关闭后，客户端带旧会话 ID 的 POST 请求仍会按无会话方式处理；GET 事件流和 DELETE 会返回 `404`，客户端重新初始化即可。
+
 ## 写操作确认
 
 - `MCP_SEND_MODE=confirm`：邮件和 Teams 消息需要用户确认，适合交互式客户端。
@@ -373,10 +406,12 @@ npm run dev:http
 - 只通过 HTTPS 暴露远程 MCP 和 OAuth callback。
 - 使用 Secret Manager 保存 client secret 和 `MCP_ADMIN_TOKEN`，不要提交 `.env`。
 - 启用 `MCP_ROLE_BASED_FILTERING=true`，并按最小权限给用户或组分配 App Roles。
-- 只移除已经在 Entra 中获批并完成 consent 的 `MCP_DISABLED_GRAPH_SCOPES`。
+- 用 `MCP_ALLOWED_GRAPH_SCOPES` 列出 Entra 中已同意的权限，并用 `npm run permissions` 核对；只把已经同意的权限加入白名单。
+- 只需要读取时设置 `MCP_READ_ONLY=true`。
+- 用 `MCP_OAUTH_REDIRECT_HOSTS` 只放行实际在用的网页客户端回调域名；客户端都注册后可以关闭动态注册。
 - 保持 `MCP_AUDIT_LOG_ENABLED=true`，并把日志接入组织规定的留存和 SIEM 流程。
 - 根据场景选择 `MCP_SEND_MODE` 和 `MCP_CONFIRM_OPERATIONS`。
-- 对公网部署增加反向代理、访问日志、限流、健康检查和凭据轮换。
+- 对公网部署增加反向代理、访问日志、健康检查和凭据轮换。内置限流按单个实例计数，需要全局限流时在代理层再加一层。
 
 更完整的安全边界见 [威胁模型](docs/THREAT_MODEL.md) 和 [安全策略](SECURITY.md)。
 
