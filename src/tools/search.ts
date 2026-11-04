@@ -135,7 +135,7 @@ export const searchModule: ToolModule = {
       {
         title: 'Search Teams Messages',
         description: describeTool(
-          'Search Teams chat and channel messages by keywords with Microsoft Search. Each hit has sender, time, a highlighted summary and the chatId (or teamId and channelId) to read the conversation with teams_list_chat_messages or teams_list_channel_messages. Continue with from set to nextFrom. Requires delegated Chat.Read; channel hits also need ChannelMessage.Read.All. Requires both mcp.search and mcp.teams roles.',
+          'Search Teams chat and channel messages by keywords with Microsoft Search. Each hit has sender, time, a highlighted summary and the chatId (or teamId and channelId) to read the conversation with teams_list_chat_messages or teams_list_channel_messages. Continue with from set to nextFrom. Requires delegated Chat.Read and ChannelMessage.Read.All: Microsoft Search refuses Teams message queries without both. Requires both mcp.search and mcp.teams roles.',
           ['全文搜索Teams消息', '搜索聊天记录', '用Microsoft Search查Teams讨论', '查找谁在Teams里提到过']
         ),
         inputSchema: {

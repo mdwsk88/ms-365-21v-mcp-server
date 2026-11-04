@@ -80,8 +80,9 @@ test('disabled Graph scopes remove dependent tools from both registry and MCP ca
   const server = createGraphMcpServer(config, { bypassRoleFiltering: true });
   const disabled = new Set(disabledGraphScopes.map(scope => scope.toLowerCase()));
 
-  assert.equal(registry.getAll().length, 126);
-  assert.equal(toolNames(server).length, 126);
+  assert.equal(registry.getAll().length, 125);
+  assert.equal(toolNames(server).length, 125);
+  assert.equal(registry.getByName('search_teams'), undefined, 'Teams search needs ChannelMessage.Read.All too');
   assert.equal(
     registry.getAll().filter(tool => tool.graphScopes.some(scope => disabled.has(scope.toLowerCase()))).length,
     0

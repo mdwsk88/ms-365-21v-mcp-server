@@ -84,6 +84,45 @@ export function cursorPath(config: AppConfig, cursor: string, allowed: RegExp): 
   return url.toString();
 }
 
+/** Another person's mailbox or calendar could not be read; Graph only answers "not found". */
+export class SharedAccessError extends Error {
+  constructor(
+    readonly code: 'not_shared' | 'unknown_user',
+    message: string
+  ) {
+    super(message);
+    this.name = 'SharedAccessError';
+  }
+}
+
+function explainSharedAccess(error: unknown, kind: 'mailbox' | 'calendar', owner: string): unknown {
+  if (!(error instanceof GraphHttpError) || error.status !== 404) return error;
+  const code = text(record(record(error.responseBody).error).code);
+  if (code === 'ErrorInvalidUser') {
+    return new SharedAccessError(
+      'unknown_user',
+      `${owner} is not a user with a ${kind} in this tenant. People of another organization or tenant cannot be read; use a user principal name or ID from users_search.`
+    );
+  }
+  if (code === 'ErrorItemNotFound') {
+    return new SharedAccessError(
+      'not_shared',
+      kind === 'mailbox'
+        ? `The mailbox of ${owner} is not shared with you, or that folder is not. Ask its owner for access.`
+        : `The calendar of ${owner} is not shared with you with enough detail to read events. Ask its owner to share it, or use calendar_get_schedule for free/busy time.`
+    );
+  }
+  return error;
+}
+
+async function readShared<T>(kind: 'mailbox' | 'calendar', owner: string | undefined, request: () => Promise<T>): Promise<T> {
+  try {
+    return await request();
+  } catch (error) {
+    throw owner ? explainSharedAccess(error, kind, owner) : error;
+  }
+}
+
 /** Whose mailbox or calendar a cursor reads: the /users/{owner} segment, or undefined for /me. */
 function cursorOwner(config: AppConfig, cursor: string): string | undefined {
   const basePath = new URL(config.graphBaseUrl).pathname;
@@ -383,7 +422,8 @@ export async function listChannelMessagesOverview(
 /**
  * Microsoft Search over Teams messages the user can see. Each hit names the chat, or the team and
  * channel, so the conversation can be read next with teams_list_chat_messages or
- * teams_list_channel_messages. Channel hits need ChannelMessage.Read.All as well as Chat.Read.
+ * teams_list_channel_messages. Microsoft Search requires ChannelMessage.Read.All as well as Chat.Read,
+ * even for chat hits (verified against 21Vianet on 2026-11-04).
  */
 export async function searchTeamsMessages(config: AppConfig, input: { query: string; from?: number; size?: number }) {
   const from = clamp(input.from, 0, 0, 1000);
@@ -530,15 +570,17 @@ export async function listMailOverview(
   } else {
     const target = mailboxBase(config, input.mailbox);
     mailbox = target.mailbox;
-    response = await graphRequest(config, 'GET', mailFolderPath(target.base, input.folder), {
-      query: {
-        $top: top,
-        $select: mailListSelect,
-        $orderby: 'receivedDateTime desc',
-        $filter: mailListFilter({ ...input, since, until })
-      },
-      scopes: [target.scope]
-    });
+    response = await readShared('mailbox', mailbox, () =>
+      graphRequest(config, 'GET', mailFolderPath(target.base, input.folder), {
+        query: {
+          $top: top,
+          $select: mailListSelect,
+          $orderby: 'receivedDateTime desc',
+          $filter: mailListFilter({ ...input, since, until })
+        },
+        scopes: [target.scope]
+      })
+    );
   }
   const me = currentUser();
   const messages = records(record(response).value).map(message => shapeMailRow(message, me));
@@ -563,14 +605,16 @@ export async function searchMailOverview(
   } else {
     const target = mailboxBase(config, input.mailbox);
     mailbox = target.mailbox;
-    response = await graphRequest(config, 'GET', mailFolderPath(target.base, input.folder?.trim() || 'all'), {
-      query: {
-        $search: `"${input.query.replace(/"/g, '\\"')}"`,
-        $top: top,
-        $select: mailListSelect
-      },
-      scopes: [target.scope]
-    });
+    response = await readShared('mailbox', mailbox, () =>
+      graphRequest(config, 'GET', mailFolderPath(target.base, input.folder?.trim() || 'all'), {
+        query: {
+          $search: `"${input.query.replace(/"/g, '\\"')}"`,
+          $top: top,
+          $select: mailListSelect
+        },
+        scopes: [target.scope]
+      })
+    );
   }
   const me = currentUser();
   const messages = records(record(response).value).map(message => shapeMailRow(message, me));
@@ -788,18 +832,20 @@ export async function listCalendarOverview(
   } else {
     const target = calendarBase(config, input.calendarOwner);
     owner = target.owner;
-    response = await graphRequest(config, 'GET', `${target.base}/calendarView`, {
-      query: {
-        startDateTime: input.startDateTime,
-        endDateTime: input.endDateTime,
-        $top: clamp(input.top, 50, 1, 100),
-        $select:
-          'id,subject,organizer,attendees,start,end,location,webLink,isOnlineMeeting,responseStatus,seriesMasterId,isAllDay,isCancelled,showAs,bodyPreview',
-        $orderby: 'start/dateTime'
-      },
-      prefer,
-      scopes: [target.scope]
-    });
+    response = await readShared('calendar', owner, () =>
+      graphRequest(config, 'GET', `${target.base}/calendarView`, {
+        query: {
+          startDateTime: input.startDateTime,
+          endDateTime: input.endDateTime,
+          $top: clamp(input.top, 50, 1, 100),
+          $select:
+            'id,subject,organizer,attendees,start,end,location,webLink,isOnlineMeeting,responseStatus,seriesMasterId,isAllDay,isCancelled,showAs,bodyPreview',
+          $orderby: 'start/dateTime'
+        },
+        prefer,
+        scopes: [target.scope]
+      })
+    );
   }
   const { events, conflictCount } = markCalendarOverlaps(records(record(response).value).map(shapeCalendarEvent));
   return { calendarOwner: owner, timeZone, count: events.length, conflictCount, events, nextCursor: nextLink(response) };
