@@ -14,6 +14,7 @@ Maintenance release: mail attachments as download links, batch and cleaned mail 
 - `mail_get_message` reads up to 10 messages in one call with `messageIds`; a failing message comes back with its Graph status and error code.
 - `mailbox` on `mail_list_messages`, `mail_search_messages`, `mail_get_message` and `mail_get_attachment` reads a shared or delegated mailbox (needs `Mail.Read.Shared`). `calendarOwner` on `calendar_list_view` reads a calendar shared with the user (needs `Calendars.Read.Shared`), and `cursor` continues a long calendar view.
 - `calendar_list_view` flags overlapping meetings with `overlapsWith` and `conflictCount`, ignoring cancelled, declined, all-day and free events.
+- Reading another person's mailbox or calendar that is not shared with the user fails with `not_shared`, and an address that is not a user of this tenant with `unknown_user`, each with a message the agent can pass on. Graph itself answers only "not found".
 - `MCP_READ_ONLY=true` removes every tool that sends, creates, changes or deletes data, together with `confirm_execute`.
 - `MCP_ALLOWED_GRAPH_SCOPES` lists the consented delegated permissions; tools that need anything else are hidden (fail closed). Broader scopes cover narrower ones. `MCP_DISABLED_GRAPH_SCOPES` still wins.
 - `npm run permissions` (`node dist/index.js --list-permissions [--json]`) prints the scopes the enabled tools need, optional per-input scopes, hidden tools with their missing scopes, and allowed scopes no tool uses, from configuration alone.
@@ -27,7 +28,7 @@ Maintenance release: mail attachments as download links, batch and cleaned mail 
 ### Changed
 
 - Mail text bodies are cleaned by default: Safe Links unwrapped (any cloud, including 21Vianet), tracking parameters and repeated link targets dropped, inline images shown as `[image]`, and links over 500 characters outside Microsoft 365 shortened to `[link: host]`. `clean: false` returns the text as Outlook renders it. Mail previews are cleaned the same way, and every text the server returns loses zero-width and bidi-control padding.
-- `search_teams` returns one compact row per hit (sender, time, subject, summary, and the chat or team and channel to read next) with `total` and `nextFrom`. It stays out of the default direct tools until chat message search is verified in 21Vianet.
+- `search_teams` returns one compact row per hit (sender, time, subject, summary, and the chat or team and channel to read next) with `total` and `nextFrom`. It now requires `ChannelMessage.Read.All` as well as `Chat.Read`: Microsoft Search refuses Teams message queries without both, even for chat hits, so deployments without it hide the tool instead of failing with 403.
 - `teams_list_channel_messages` and `teams_list_channel_message_replies` return the chat message shape plus `subject` and `webLink`, skip deleted posts, sort each page oldest first and accept `cursor`.
 - Opening a file by link (`files_get_download_url` with `url`) requests `Files.ReadWrite`, the least-privileged permission of the shares API, and fails with `scope_not_enabled` where it is not allowed. PDF conversion of files over 2 MB returns the original file with a note instead of failing.
 - `users_list_direct_reports` needs only `User.Read` and `User.ReadBasic.All`, and `users_list_memberships` only `User.Read` for the signed-in user, so both stay available without `User.Read.All`.
@@ -44,6 +45,17 @@ Maintenance release: mail attachments as download links, batch and cleaned mail 
 
 - `smart_mail_digest`, `smart_calendar_conflicts` and `smart_teams_unread`, the `smart` category and the `mcp.smart` App Role in the role template. Use `mail_list_messages`, `calendar_list_view` and `teams_list_chats` with `since`.
 - The `raw` parameter of `mail_get_attachment`; use `format: "base64"` for inline bytes.
+
+### Verification
+
+- 136 automated tests with mocked Microsoft Graph, on Node 22, 24 and 26.
+- Against a 21Vianet tenant on 2026-11-04, with a real sign-in through the OAuth bridge, the following worked:
+  - mail list, cursor and sent items, batch reading, cleaning and single-use attachment download (a second fetch answered 410);
+  - calendar view with conflicts, and a calendar shared by a colleague (`Calendars.Read.Shared`);
+  - Teams chats and chat messages;
+  - Microsoft Search for files, download URLs by ID and by sharing link (`/shares`), and `format=pdf` conversion.
+- Microsoft Search for Teams messages answered 403 without `ChannelMessage.Read.All`.
+- Not verified yet: a shared mailbox with `Mail.Read.Shared`.
 
 ### Migration
 
