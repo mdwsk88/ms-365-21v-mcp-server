@@ -160,6 +160,31 @@ test('calendar view reads a shared calendar, follows its cursor and needs Calend
   );
 });
 
+test('a shared mailbox or calendar that cannot be read says why', async (t) => {
+  const config = await graphTestConfig(t);
+  const notFound = code =>
+    new Response(JSON.stringify({ error: { code, message: 'not found' } }), { status: 404, headers: { 'content-type': 'application/json' } });
+  const range = { startDateTime: '2026-11-04T00:00:00Z', endDateTime: '2026-11-05T00:00:00Z' };
+
+  await assert.rejects(
+    () => withMockFetch(() => notFound('ErrorItemNotFound'), () => listCalendarOverview(config, { ...range, calendarOwner: 'boss@example.cn' })),
+    error => error.code === 'not_shared' && /not shared with you/.test(error.message) && /calendar_get_schedule/.test(error.message)
+  );
+  await assert.rejects(
+    () => withMockFetch(() => notFound('ErrorInvalidUser'), () => listMailOverview(config, { mailbox: 'someone@other.example' })),
+    error => error.code === 'unknown_user' && /users_search/.test(error.message)
+  );
+  await assert.rejects(
+    () => withMockFetch(() => notFound('ErrorItemNotFound'), () => searchMailOverview(config, { query: 'x', mailbox: 'team@example.cn' })),
+    error => error.code === 'not_shared' && /mailbox of team@example.cn/.test(error.message)
+  );
+  await assert.rejects(
+    () => withMockFetch(() => notFound('ErrorItemNotFound'), () => listMailOverview(config, { folder: 'missing-folder' })),
+    error => error.name === 'GraphHttpError' && error.status === 404,
+    'my own mailbox keeps the Graph error'
+  );
+});
+
 test('the permission report lists the shared mailbox and calendar scopes as optional', async (t) => {
   const report = permissionReport(await graphTestConfig(t, { allowedGraphScopes: ['Mail.Read', 'Calendars.Read'] }));
   const optional = Object.fromEntries(report.optionalScopes.map(item => [item.scope, item]));

@@ -2,7 +2,7 @@
 
 > This file is generated from the runtime registry by `npm run docs:tools`. Do not edit tool rows manually.
 
-The implementation contains **151 tools**. The current production permission boundary exposes **129 tools** and hides **22 tools** whose Graph delegated scopes are not approved. Every enabled business tool is mapped to an Entra App Role and one or more Microsoft Graph delegated permissions; an optional scope is needed only for some inputs, such as another person's mailbox.
+The implementation contains **151 tools**. The current production permission boundary exposes **128 tools** and hides **23 tools** whose Graph delegated scopes are not approved. Every enabled business tool is mapped to an Entra App Role and one or more Microsoft Graph delegated permissions; an optional scope is needed only for some inputs, such as another person's mailbox.
 
 In the default `hybrid` exposure mode, clients list only the **14 tools** marked *Direct* below (read-only Teams chat, mail, calendar and file scenarios plus gateway controls). Every other authorized tool is reached through `gateway_search_tools` and `gateway_execute_tool` with the same App Role, confirmation and audit checks. Change the direct set with `MCP_DIRECT_TOOLS`.
 
@@ -16,7 +16,7 @@ In the default `hybrid` exposure mode, clients list only the **14 tools** marked
 | Gateway Controls | 5 | 5 | 0 | - |
 | Groups | 1 | 1 | 0 | `mcp.groups` |
 | Mail | 22 | 8 | 14 | `mcp.mail` |
-| Microsoft Search | 5 | 5 | 0 | `mcp.calendar`, `mcp.drive`, `mcp.mail`, `mcp.search`, `mcp.sharepoint`, `mcp.teams` |
+| Microsoft Search | 4 | 4 | 0 | `mcp.calendar`, `mcp.drive`, `mcp.mail`, `mcp.search`, `mcp.sharepoint` |
 | SharePoint | 33 | 15 | 18 | `mcp.sharepoint` |
 | Teams | 10 | 7 | 3 | `mcp.teams` |
 | Users and Profiles | 5 | 5 | 0 | `mcp.users` |
@@ -135,7 +135,6 @@ In the default `hybrid` exposure mode, clients list only the **14 tools** marked
 | `search_files` | Search Microsoft 365 Files | Read | Discovery | `mcp.search`, `mcp.drive` | `Files.Read.All` |
 | `search_mail` | Search Microsoft 365 Mail | Read | Discovery | `mcp.search`, `mcp.mail` | `Mail.Read` |
 | `search_sharepoint` | Search SharePoint Content | Read | Discovery | `mcp.search`, `mcp.sharepoint` | `Sites.Read.All` |
-| `search_teams` | Search Teams Messages | Read | Discovery | `mcp.search`, `mcp.teams` | `Chat.Read`; optional `ChannelMessage.Read.All` |
 
 ## SharePoint
 
@@ -202,7 +201,7 @@ In the default `hybrid` exposure mode, clients list only the **14 tools** marked
 
 ## Disabled Pending Tenant Approval
 
-The following **22 tools** remain implemented but are excluded from both MCP discovery and direct invocation. They become available after the corresponding delegated permissions are approved and allowed: added to `MCP_ALLOWED_GRAPH_SCOPES` or removed from `MCP_DISABLED_GRAPH_SCOPES`.
+The following **23 tools** remain implemented but are excluded from both MCP discovery and direct invocation. They become available after the corresponding delegated permissions are approved and allowed: added to `MCP_ALLOWED_GRAPH_SCOPES` or removed from `MCP_DISABLED_GRAPH_SCOPES`.
 
 | Tool | Module | Graph delegated scopes |
 |---|---|---|
@@ -210,6 +209,7 @@ The following **22 tools** remain implemented but are excluded from both MCP dis
 | `groups_list` | Groups | `GroupMember.Read.All` |
 | `groups_list_members` | Groups | `GroupMember.Read.All` |
 | `groups_list_owners` | Groups | `GroupMember.Read.All` |
+| `search_teams` | Microsoft Search | `Chat.Read`, `ChannelMessage.Read.All` |
 | `teams_add_channel_member` | Teams | `ChannelMember.ReadWrite.All` |
 | `teams_add_chat_member` | Teams | `ChatMember.ReadWrite` |
 | `teams_add_team_member` | Teams | `TeamMember.ReadWrite.All` |
